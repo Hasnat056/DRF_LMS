@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  redis-server:
+    image: redis/redis-stack
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    networks:
+      - drf_network
+
+  web:
+    build: .
+    container_name: drf-web
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis-server
+    networks:
+      - drf_network
+
+  celery-worker:
+    build: .
+    container_name: celery-worker
+    command: celery -A DjangoRESTProject_practice worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis-server
+      - web
+    networks:
+      - drf_network
+
+networks:
+  drf_network:
+    driver: bridge

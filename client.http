@@ -1,0 +1,118 @@
+###
+POST http://localhost:8000/api/token/
+Content-Type: application/json
+
+{
+  "username" : "numadm10@namal.edu.pk",
+  "password" : "ADM1012345678"
+}
+
+
+
+
+
+### Admin Dashboard
+GET http://localhost:8000/api/admin/dashboard/
+Content-Type: application/json
+Authorization:
+
+
+### Admin Faculty Create
+POST http://localhost:8000/api/admin/faculty/
+Content-Type: application/json
+Authorization:
+
+{
+  "person" : {
+    "user" : {"password" : "lms123"},
+    "image" : "",
+    "first_name" : "Hasnat",
+    "last_name" : "Akram",
+    "father_name" : "Muhammad Akram",
+    "gender" : "Male",
+    "dob" : "2003-02-13",
+    "contact_number" : "+923222307258",
+    "cinc" : "31303-5510349-9",
+    "institutional_email" : "bscs23f01@namal.edu.pk",
+    "personal_email" : "rhays056@gmail.com",
+    "religion" : "Islam",
+    "address" : {
+      "country" : "Pakistan",
+      "province" : "Punjab",
+      "city" : "Rahim yar Khan",
+      "zipcode" : 64220,
+      "street_address" : "Dak-Khana khas Chak#56/p Rahim yar Khan"
+    },
+    "qualification_set" : [
+      {
+        "degree_title" : "Matriculation",
+        "institution" : "AL-Huda Grammar School, Rahim yar Khan",
+        "passing_year" : 2020,
+        "total_marks" : 1100,
+        "obtained_marks" : 1062,
+        "is_current" : 0
+      },
+      {
+        "degree_title" : "Intermediate",
+        "institution" : "Oxbridge College, Rahim yar Khan",
+        "passing_year" : 2022,
+        "total_marks" : 1100,
+        "obtained_marks" : 1050,
+        "is_current" : 0
+      }
+    ]
+  },
+  "program_id" : "BSCS",
+  "class_id" : 2
+}
+
+
+### Admin Student Create
+POST http://localhost:8000/api/admin/student/
+Content-Type: application/json
+Authorization:
+
+{
+  "person" : {
+    "user" : {"password" : "lms123"},
+    "image" : "",
+    "first_name" : "Hasnat",
+    "last_name" : "Akram",
+    "father_name" : "Muhammad Akram",
+    "gender" : "Male",
+    "dob" : "2003-02-13",
+    "contact_number" : "+923222307258",
+    "cinc" : "31303-5510349-9",
+    "institutional_email" : "bscs23f01@namal.edu.pk",
+    "personal_email" : "rhays056@gmail.com",
+    "religion" : "Islam",
+    "address" : {
+      "country" : "Pakistan",
+      "province" : "Punjab",
+      "city" : "Rahim yar Khan",
+      "zipcode" : 64220,
+      "street_address" : "Dak-Khana khas Chak#56/p Rahim yar Khan"
+    },
+    "qualification_set" : [
+      {
+        "degree_title" : "Matriculation",
+        "institution" : "AL-Huda Grammar School, Rahim yar Khan",
+        "passing_year" : 2020,
+        "total_marks" : 1100,
+        "obtained_marks" : 1062,
+        "is_current" : 0
+      },
+      {
+        "degree_title" : "Intermediate",
+        "institution" : "Oxbridge College, Rahim yar Khan",
+        "passing_year" : 2022,
+        "total_marks" : 1100,
+        "obtained_marks" : 1050,
+        "is_current" : 0
+      }
+    ]
+  },
+  "program_id" : "BSCS",
+  "class_id" : 2
+}
+

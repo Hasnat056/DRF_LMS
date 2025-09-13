@@ -19,13 +19,34 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView
+)
 urlpatterns = [
-       path('admin/', admin.site.urls),
-       path('auth/', obtain_auth_token),
-       path('accounts/', include('django.contrib.auth.urls')),
+        # django admin site
+        path('admin/', admin.site.urls),
+        # DRF TokenAuthentication
+        path('auth/', obtain_auth_token),
+        # JWT Authentication
+        path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+        path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+        # Accounts Login
+        path('accounts/', include('django.contrib.auth.urls')),
 
-       path('api/admin/', include('AdminModule.urls')),
-       path('api/faculty/', include('FacultyModule.urls')),
-       path('api/student/', include('StudentModule.urls')),
+        # Project urls
+        path('api/admin/', include('AdminModule.urls')),
+        path('api/faculty/', include('FacultyModule.urls')),
+        path('api/student/', include('StudentModule.urls')),
+
+        # API Documentation
+        path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+        path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+        path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

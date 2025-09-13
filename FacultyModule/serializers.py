@@ -2,11 +2,14 @@ from datetime import timedelta
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.shortcuts import get_list_or_404
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field, inline_serializer
+
 from AdminModule.mixins import ResultCalculationMixin
 from Models.models import *
 from rest_framework import serializers, status
 
-def get_faculty_serializer():
+def get_faculty_allocation_serializer():
     from AdminModule.serializers import CourseAllocationSerializer
     from rest_framework.reverse import reverse
 
@@ -18,6 +21,7 @@ def get_faculty_serializer():
 
         result_calculation_url = serializers.SerializerMethodField()
 
+        @extend_schema_field(OpenApiTypes.URI)
         def get_result_calculation_url(self, obj):
             request = self.context.get("request")
             return request.build_absolute_uri(
@@ -26,6 +30,7 @@ def get_faculty_serializer():
 
         class Meta(CourseAllocationSerializer.Meta):
             fields = CourseAllocationSerializer.Meta.fields + ["urls", "result_calculation_url"]
+            ref_name = "FacultyCourseAllocationUnique"
 
     return FacultyCourseAllocationSerializer
 
@@ -60,6 +65,17 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
         ]
         list_serializer_class = CustomizedListSerializer
 
+    @extend_schema_field(
+        inline_serializer(
+            name='StudentData',
+            fields={
+                'image': serializers.URLField(),
+                'student_id': serializers.CharField(),
+                'first_name': serializers.CharField(),
+                'last_name': serializers.CharField(),
+            }
+        )
+    )
     def get_student_info(self, obj):
         request = self.context.get("request")
         if obj:
@@ -302,6 +318,17 @@ class AttendanceSerializer(serializers.ModelSerializer):
         ]
         list_serializer_class = CustomizedListSerializer
 
+    @extend_schema_field(
+        inline_serializer(
+            name='StudentData',
+            fields={
+                'image': serializers.URLField(),
+                'student_id': serializers.CharField(),
+                'first_name': serializers.CharField(),
+                'last_name': serializers.CharField(),
+            }
+        )
+    )
     def get_student_info(self, obj):
         request = self.context.get('request')
         if obj:

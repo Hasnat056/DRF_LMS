@@ -11,7 +11,7 @@ def current_time():
     return timezone.now().date()
 
 class Department(models.Model):
-    department_id = models.AutoField(primary_key=True)
+    department_id = models.CharField(max_length=10, primary_key=True)
     department_name = models.CharField(max_length=100)
     department_inauguration_date = models.DateField(db_column='establishmentDate', blank=True, null=True)
     HOD = models.ForeignKey('Faculty', on_delete=models.SET_NULL, null=True, blank=True)
@@ -20,12 +20,12 @@ class Department(models.Model):
         db_table = 'department'
 
     def __str__(self):
-        return self.department_name
+        return self.department_id
 
 class Program (models.Model):
     program_id = models.CharField(primary_key=True, max_length=10)
     program_name = models.CharField(max_length=100)
-    department_id = models.ForeignKey('Department', on_delete=models.SET_NULL, null=True)
+    department_id = models.ForeignKey('Department', on_delete=models.RESTRICT, null=True)
     total_semesters = models.IntegerField(blank=True, default=8)
     fee_per_semester = models.IntegerField(blank=True, null=True)
 
@@ -38,7 +38,7 @@ class Program (models.Model):
 
 class Class(models.Model):
     class_id = models.AutoField(primary_key=True)
-    program_id = models.ForeignKey('Program', on_delete=models.SET_NULL, null=True)
+    program_id = models.ForeignKey('Program', on_delete=models.RESTRICT, null=True)
     batch_year = models.IntegerField(blank=True, null=True)
 
     class Meta:
@@ -242,8 +242,8 @@ class Enrollment(models.Model):
         ('Dropped', 'Dropped'),
     ]
     enrollment_id = models.AutoField(primary_key=True)
-    student_id = models.ForeignKey('Student', on_delete=models.CASCADE)
-    allocation_id = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE)
+    student_id = models.ForeignKey('Student', on_delete=models.RESTRICT)
+    allocation_id = models.ForeignKey('CourseAllocation', on_delete=models.RESTRICT)
     enrollment_date = models.DateTimeField(default=timezone.now)
     status = models.CharField(max_length=9, default='Inactive', choices=STATUS_CHOICES)
 
@@ -471,7 +471,7 @@ class Qualification(models.Model):
 
 class AuditTrail(models.Model):
     audit_id = models.AutoField( primary_key=True)
-    userid = models.ForeignKey('Person', on_delete=models.CASCADE,)
+    userid = models.ForeignKey('Person', on_delete=models.CASCADE)
     action_type = models.CharField( max_length=6)
     entity_name = models.CharField( max_length=50)
     time_stamp = models.DateTimeField(default=datetime.now)

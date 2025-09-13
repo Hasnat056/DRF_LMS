@@ -1,42 +1,143 @@
-from datetime import timedelta
 from django.db.models import Count
 from django.db.models.functions import ExtractYear
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 import django_filters
 from rest_framework import generics
-from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 
+
 from .tasks import cache_faculty_data_task, cache_student_data_task, cache_programs_data_task, cache_courses_data_task, \
-    cache_semester_data_task, cache_courseAllocation_data_task, cache_enrollment_data_task
+    cache_semester_data_task, cache_courseAllocation_data_task, cache_enrollment_data_task, \
+    send_result_calculation_confirmation_mail
 from .serializers import *
 from .mixins import *
 
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiExample,
+    OpenApiTypes
+)
+from rest_framework.views import APIView
+from rest_framework.response import Response
 
 
-@method_decorator(cache_page(60*5), name='dispatch')
+@extend_schema(
+    description=(
+        "This endpoint provides the **Admin Dashboard Data**.\n\n"
+        "- Returns admin profile info, total counts for entities (students, faculty, etc.),\n"
+        "- Aggregated data such as yearly admissions, enrollments, and department stats.\n"
+        "- Accessible only to authenticated **admins**."
+    ),
+    responses={
+        200: OpenApiResponse(
+            description="Admin dashboard data retrieved successfully",
+            response=OpenApiTypes.OBJECT,
+            examples=[
+                OpenApiExample(
+                    'Success Example',
+                    value={
+                        "admin": {
+                            "admin_id": "NUM-ADM-2022-01",
+                            "first_name": "Admin",
+                            "last_name": "Admin",
+                            "institutional_email": "admin@domain.com",
+                            "image": "https://domain.com/media/profile_images/admin.png"
+                        },
+                        "students_total": 350,
+                        "faculty_total": 20,
+                        "programs_total": 5,
+                        "courses_total": 45,
+                        "classes_total": 12,
+                        "allocation_total": 40,
+                        "enrollment_total": 220,
+                        "students_status_count": [
+                            {"status": "Active", "count": 300},
+                            {"status": "Inactive", "count": 50}
+                        ],
+                        "allocations_status_count": [
+                            {"status": "Assigned", "count": 30},
+                            {"status": "Pending", "count": 10}
+                        ],
+                        "enrollments_status_count": [
+                            {"status": "Ongoing", "count": 180},
+                            {"status": "Completed", "count": 40}
+                        ],
+                        "classes_student_count": [
+                            {"class_id": 1, "count": 40},
+                            {"class_id": 2, "count": 35}
+                        ],
+                        "departments_data": [
+                            {
+                                "department_id": 1,
+                                "student_count": 120,
+                                "faculty_count": 10,
+                                "program_count": 3
+                            },
+                            {
+                                "department_id": 2,
+                                "student_count": 230,
+                                "faculty_count": 12,
+                                "program_count": 2
+                            }
+                        ],
+                        "enrollment_yearly": [
+                            {"year": 2022, "count": 100},
+                            {"year": 2023, "count": 120}
+                        ],
+                        "yearly_admission": [
+                            {
+                                "program_id__department_id__department_name": "Computer Science",
+                                "year": 2023,
+                                "count": 80
+                            },
+                            {
+                                "program_id__department_id__department_name": "Electrical Engineering",
+                                "year": 2023,
+                                "count": 40
+                            }
+                        ]
+                    }
+                )
+            ]
+        ),
+        403: OpenApiResponse(
+            description="Forbidden - Only admins can access this endpoint",
+            response=OpenApiTypes.OBJECT,
+            examples=[
+                OpenApiExample(
+                    'Forbidden Example',
+                    value={"detail": "You do not have permission to perform this action."}
+                )
+            ]
+        )
+    },
+
+)
+
+
 class AdminDashboardAPIView(
-    IsSuperUserOrAdminMixin,
+    AdminPermissionMixin,
     APIView
 ):
 
     def get(self, request, *args, **kwargs):
-        if request.user.is_superuser:
-            return Response(data={'message': 'This view belongs to valid admin user'})
+        cache_key = f'admin:dashboard:{request.user.username}'
+        data = cache.get(cache_key)
+        if data is not None:
+            return Response(data, status=status.HTTP_200_OK)
 
         admin = get_object_or_404(Admin, employee_id__user=request.user)
         admin_data = {
-            'admin_id' : admin.employee_id.person_id,
-            'first_name' : admin.employee_id.first_name,
-            'last_name' : admin.employee_id.last_name,
-            'institutional_email' : admin.employee_id.institutional_email,
-            'image' : request.build_absolute_uri(admin.employee_id.image.url) if admin.employee_id.image else None,
+            'admin_id': admin.employee_id.person_id,
+            'first_name': admin.employee_id.first_name,
+            'last_name': admin.employee_id.last_name,
+            'institutional_email': admin.employee_id.institutional_email,
+            'image': request.build_absolute_uri(admin.employee_id.image.url) if admin.employee_id.image else None,
         }
+
         students_total = Student.objects.count()
         faculty_total = Faculty.objects.count()
         programs_total = Program.objects.count()
@@ -85,7 +186,7 @@ class AdminDashboardAPIView(
         yearly_admission = (
             Student.objects
             .annotate(year=ExtractYear('admission_date'))
-            .values('program_id__department_id__department_name', 'year')  # use name instead of id
+            .values('program_id__department_id__department_name', 'year')
             .annotate(count=Count('student_id'))
             .order_by('program_id__department_id__department_name', 'year')
         )
@@ -107,6 +208,7 @@ class AdminDashboardAPIView(
             'enrollment_yearly': enrollment_yearly,
             'yearly_admission': yearly_admission,
         }
+        cache.set(cache_key,data, timeout=60*5)
 
         return Response(data)
 
@@ -745,7 +847,10 @@ class EnrollmentRetrieveUpdateDestroyAPIView(
 
 
 
-class TranscriptListCreateAPIView(generics.ListCreateAPIView):
+class TranscriptListCreateAPIView(
+    IsSuperUserOrAdminMixin,
+    generics.ListCreateAPIView
+):
     queryset = Transcript.objects.all()
     serializer_class = TranscriptSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -753,7 +858,10 @@ class TranscriptListCreateAPIView(generics.ListCreateAPIView):
     search_fields = ['student_id__student_id__person_id', 'student_id__student_id__first_name',
                      'student_id__student_id__last_name']
 
-class TranscriptBulkCreateAPIView(APIView):
+class TranscriptBulkCreateAPIView(
+    IsSuperUserOrAdminMixin,
+    APIView
+):
     serializer_class = BulkTranscriptSerializer
     def post(self, request, *args, **kwargs):
         if self.request.user.is_superuser or self.request.user.groups.filter(name='Admin').exists():
@@ -787,6 +895,22 @@ class ChangeRequestRetrieveUpdateAPIView(
     serializer_class = ChangeRequestSerializer
 
 
+@extend_schema(
+    responses={
+        200:OpenApiResponse(
+            description="Request Confirmation Success",
+            examples={
+                OpenApiExample(
+                    'Success Example',
+                    value={'message' : 'Change Request confirmation successfully'},
+                )
+            }
+        ),
+        400:OpenApiResponse(
+            description="Link expired or already processed",
+        )
+    }
+)
 class ChangeRequestView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -809,23 +933,7 @@ class ChangeRequestView(APIView):
         change_request.confirmed_at = datetime.now()
         change_request.save()
         if change_request.change_type == 'result_calculation':
-            send_mail(
-                subject=f"Result Calculation Request Approved",
-                message=f"Dear Faculty member,\n"
-                        "Your request to calculate the result for the course allocation: \n"
-                        f"Course Allocation ID: {change_request.target_allocation.allocation_id}\n"
-                        f"Faculty ID: {change_request.target_allocation.teacher_id.employee_id.person_id}\n"
-                        f"Faculty Name: {change_request.target_allocation.teacher_id.employee_id.first_name} {change_request.target_allocation.teacher_id.employee_id.last_name}\n"
-                        f"Semester ID: {change_request.target_allocation.semester_id}\n"
-                        f"Session: {change_request.target_allocation.session}\n"
-                        f"has been approved by the admin. Kindly visit your portal to apply changes\n"
-                       
-
-                        f"Thank you,\n"
-                        f"NAMAL UNIVERSITY, MAINWALI",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[change_request.target_allocation.teacher_id.employee_id.institutional_email],
-            )
+            send_result_calculation_confirmation_mail.apply_aysnc(args=[change_request.pk],eta=timezone.now()+timedelta(minutes=2))
 
 
         return Response({"message": "Change request confirmed successfully!"},status=status.HTTP_200_OK)

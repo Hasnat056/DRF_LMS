@@ -1,5 +1,4 @@
 from rest_framework import permissions
-
 from Models.models import CourseAllocation, Semester
 
 
@@ -18,8 +17,6 @@ class IsSuperUserOrAdminPermission(permissions.BasePermission):
 class AdminPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.user.is_authenticated:
-            if request.user.is_superuser:
-                return True
             if  request.user.groups.filter(name='Admin').exists():
                 return request.method == 'GET' or request.method == 'PUT' or request.method == 'PATCH'
             return False
@@ -27,8 +24,6 @@ class AdminPermissions(permissions.BasePermission):
 
     def has_object_permission(self, request, view, obj):
         if request.user.is_authenticated:
-            if request.user.is_superuser:
-                return True
             if request.user.groups.filter(name='Admin').exists():
                 return request.user == obj.employee_id.user
             return False

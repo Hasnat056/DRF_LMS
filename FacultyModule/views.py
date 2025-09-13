@@ -1,30 +1,79 @@
 from http import HTTPStatus
 from django.core.cache import cache
 from django.shortcuts import reverse, get_object_or_404
-from django.core.mail import send_mail
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from rest_framework import generics
 from rest_framework.views import APIView
 
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+
+from AdminModule.tasks import send_result_calculation_mail
 from DjangoRESTProject_practice import settings
 from AdminModule.serializers import FacultySerializer
 from FacultyModule.serializers import *
 from .mixins import *
 
+@extend_schema(
+    description=(
+        "This endpoint provides **Faculty Dashboard Data**.\n\n"
+        "- Returns the logged-in faculty member's profile information.\n"
+        "- Provides statistics about their course allocations, "
+        "including counts of active and completed allocations.\n"
+        "- Shows the average success score for each completed course allocation."
+    ),
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description='Faculty Dashboard data retrieved successfully',
+            examples=[
+                OpenApiExample(
+                    'Success Example',
+                    value={
+                        "faculty": {
+                            "employee_id": "NUM-DCS-2023-10",
+                            "image": "https://domain.com/media/profile_images/faculty.png",
+                            "first_name": "John",
+                            "last_name": "Doe",
+                            "institutional_email": "faculty@domain.com"
+                        },
+                        "course_allocation_count": 8,
+                        "active_allocations": 3,
+                        "completed_allocations": 5,
+                        "allocation_average_success": {
+                            "ALLOC-001": 85.5,
+                            "ALLOC-002": 78.25
+                        }
+                    }
+                )
+            ]
+        ),
+        403: OpenApiResponse(
+            description="Forbidden - Only faculty can access this endpoint",
+            response=OpenApiTypes.OBJECT,
+            examples=[
+                OpenApiExample(
+                    'Forbidden Example',
+                    value={"detail": "You do not have permission to perform this action."}
+                )
+            ]
+        ),
+    }
+)
 
-@method_decorator(cache_page(60*5), name='dispatch')
+
 class FacultyDashboardView(
     FacultyPermissionMixin,
     APIView
 ):
     def get(self,request):
+        cache_key = f'faculty:dashboard:{request.user.username}'
+        data = cache.get(cache_key)
+        if data is not None:
+            return Response(data, status=status.HTTP_200_OK)
+
         faculty = Faculty.objects.filter(employee_id__user=self.request.user).prefetch_related('courseallocation_set').first()
-        if not faculty:
-            return Response(status=status.HTTP_404_NOT_FOUND)
         faculty_data = {
             'employee_id': faculty.employee_id.person_id,
             'image' : request.build_absolute_uri(faculty.employee_id.image.url) if faculty.employee_id.image else None,
@@ -47,7 +96,8 @@ class FacultyDashboardView(
             'completed_allocations': completed_allocations,
             'allocation_average_success': allocation_average_success,
         }
-        return Response(data=data, status=status.HTTP_200_OK)
+        cache.set(cache_key, data, timeout=60*5)
+        return Response(data, status=status.HTTP_200_OK)
 
 
 
@@ -71,7 +121,7 @@ class FacultyProfileView(
 
         serializer = self.serializer_class(faculty, context={'request': request})
         if cached_data is None:
-            cache.set(cache_key, serializer.data, timeout=60 * 60 * 24)
+            cache.set(cache_key, serializer.data, timeout=60*5)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
         
@@ -83,7 +133,7 @@ class FacultyProfileView(
         if serializer.is_valid():
             instance = serializer.save()
             cache.delete(cache_key)
-            cache.set(cache_key, instance.data, timeout=60*60*12)
+            cache.set(cache_key, instance.data, timeout=60*5)
 
             return Response(data=instance.data, status=status.HTTP_200_OK)
         else:
@@ -97,7 +147,7 @@ class FacultyCourseAllocationView(
     generics.ListAPIView
 ):
 
-    serializer_class = get_faculty_serializer()
+    serializer_class = get_faculty_allocation_serializer()
     def get_queryset(self):
         queryset = CourseAllocation.objects.filter(teacher_id__employee_id__user=self.request.user, status__in=['Ongoing', 'Completed'])
         if queryset.exists():
@@ -112,11 +162,11 @@ class FacultyCourseAllocationView(
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True, context={'request': request})
-                cache.set(cache_key, serializer.data, timeout=60*60*24)
+                cache.set(cache_key, serializer.data, timeout=60*5)
                 return self.get_paginated_response(serializer.data)
 
             serializer = self.get_serializer(queryset, many=True, context={'request': request})
-            cache.set(cache_key, serializer.data, timeout=60*60*24)
+            cache.set(cache_key, serializer.data, timeout=60*5)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         else:
@@ -144,7 +194,7 @@ class FacultyCourseAllocationRetrieveView(
     generics.RetrieveUpdateAPIView
 ):
     queryset = CourseAllocation.objects.all()
-    serializer_class = get_faculty_serializer()
+    serializer_class = get_faculty_allocation_serializer()
     lookup_field = 'allocation_id'
 
 
@@ -184,11 +234,11 @@ class AssessmentListCreateAPIView(
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True)
-                cache.set(cache_key, serializer.data, timeout=60 * 60 * 24)
+                cache.set(cache_key, serializer.data, timeout=60*5)
                 return self.get_paginated_response(serializer.data)
 
             serializer = self.get_serializer(queryset, many=True)
-            cache.set(cache_key, serializer.data, timeout=60*60*24)
+            cache.set(cache_key, serializer.data, timeout=60*5)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         else:
@@ -218,7 +268,7 @@ class AssessmentListCreateAPIView(
         data = cache.get(cache_key) or []
         new_data = self.get_serializer(instance).data
         data.append(new_data)
-        cache.set(cache_key, data, timeout=60 * 60 * 24)
+        cache.set(cache_key, data, timeout=60*5)
 
 
 
@@ -307,24 +357,9 @@ class ResultCalculationRequest(
             admin = Admin.objects.get(status='Active')
             if not admin:
                 return Response(data={'message': 'Action not possible'}, status=status.HTTP_403_FORBIDDEN)
-            send_mail(
-                subject=f"Result Calculation Request : {allocation.allocation_id}",
-                message=f"Dear Admin,\n"
-                        "A result calculation request has been made for the course allocation: \n"
-                        f"Course Allocation ID: {allocation.allocation_id}\n"
-                        f"Faculty ID: {allocation.teacher_id.employee_id.person_id}\n"
-                        f"Faculty Name: {allocation.teacher_id.employee_id.first_name} {allocation.teacher_id.employee_id.last_name}\n"
-                        f"Semester ID: {allocation.semester_id}\n"
-                        f"Session: {allocation.session}\n"
-                        f"To approve this request click the link below:\n"
-                        f"Confirmation link : {confirmation_link} \n"
-                        f"The links will expire in 48 hours.\n"
 
-                        f"Thank you,\n"
-                        f"NAMAL UNIVERSITY, MAINWALI",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[admin.employee_id.institutional_email],
-            )
+            send_result_calculation_mail.apply_aysnc(args=[change_request.pk, confirmation_link, admin.employee_id.institutional_email], eta=timezone.now()+timedelta(minutes=2))
+
             return Response(data={'message': 'The request has been successfully sent to the admin'})
         return Response(data={'message': 'A valid user not provided'}, status=status.HTTP_403_FORBIDDEN)
 

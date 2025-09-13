@@ -17,7 +17,7 @@ urlpatterns =[
     path('change-request/confrim/<uuid:token>/', ChangeRequestView.as_view(), name='confirm-change-request'),
 
     path('departments/', DepartmentListAPIView.as_view()),
-    path('departments/<int:department_id>/', DepartmentRetrieveUpdateAPIView.as_view(), name='department-detail'),
+    path('departments/<str:department_id>/', DepartmentRetrieveUpdateAPIView.as_view(), name='department-detail'),
 
     path('programs/', ProgramListCreateAPIView.as_view()),
     path('programs/<str:program_id>/', ProgramRetrieveUpdateDestroyAPIView.as_view(), name='program-detail'),

@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import  serializers
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
@@ -86,15 +87,48 @@ class StudentAssessmentCheckedSerializer(serializers.ModelSerializer):
             'obtained': {'read_only': True},
         }
 
+    def validate_student_upload(self, value):
+        instance = getattr(self, 'instance', None)
+        if value is None and (instance is None or instance.file_upload is None):
+            return None
+
+        if instance and value == instance.file_upload:
+            return value
+
+        if value is None and instance and instance.file_upload:
+            return instance.file_upload
+
+        allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
+        allowed_mime_types = [
+            'image/jpeg', 'image/png',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # docx
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # pptx
+            'application/zip',
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # xlsx
+            'text/csv',
+            'application/vnd.google-apps.spreadsheet'  # Google Sheet
+        ]
+
+        ext = value.name.split('.')[-1].lower()  # Get extension
+        mime_type = getattr(value.file, 'content_type', None)
+
+        if ext not in allowed_extensions and mime_type not in allowed_mime_types:
+            raise serializers.ValidationError(
+                "Invalid file type. Allowed formats are: jpeg, png, docx, pptx, zip, pdf, xlsx, csv, google sheet."
+            )
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if value.size > max_size:
+            raise serializers.ValidationError("File size must not exceed 50 MB.")
+
+        return value
 
 
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if self.instance and (self.context.get('request').method == 'PUT' or self.context.get('request').method == 'PATCH'):
             if (self.instance.assessment_id.student_submission == True and self.instance.assessment_id.submission_deadline is not None and (self.instance.assessment_id.submission_deadline < timezone.now())) or self.instance.enrollment_id.status == 'Completed':
-                    extra_kwargs = {
-                        'student_upload' : {'read_only': True},
-                    }
+                    extra_kwargs['student_upload'] = {'read_only': True}
         return extra_kwargs
 
 
@@ -104,9 +138,6 @@ class StudentAssessmentCheckedSerializer(serializers.ModelSerializer):
         if self.instance:
             if not self.instance.assessment_id.student_submission or (self.instance.assessment_id.student_submission == True and self.instance.assessment_id.submission_deadline < timezone.now()) or self.instance.enrollment_id.status == 'Completed':
                 self.fields.pop('urls')
-
-
-
 
 class StudentAssessmentSerializer(serializers.ModelSerializer):
     assessmentchecked_set = StudentAssessmentCheckedSerializer(many=True, read_only=True)
@@ -142,8 +173,6 @@ class StudentAssessmentSerializer(serializers.ModelSerializer):
         return representation
 
 
-
-
 class StudentCourseAllocationSerializer(serializers.ModelSerializer):
     faculty_details  = serializers.SerializerMethodField(read_only=True)
     course_details = serializers.SerializerMethodField(read_only=True)
@@ -160,16 +189,37 @@ class StudentCourseAllocationSerializer(serializers.ModelSerializer):
             'assessment_set'
         ]
 
-
-
+    @extend_schema_field(
+        inline_serializer(
+            name='FacultyData',
+            fields={
+                'teacher_id': serializers.CharField(),
+                'first_name': serializers.CharField(),
+                'last_name': serializers.CharField(),
+            }
+        )
+    )
     def get_faculty_details(self, obj):
         if obj.teacher_id:
             return {
                 'teacher_id' : obj.teacher_id.employee_id.person_id,
-                'teacher_first_name' : obj.teacher_id.employee_id.first_name,
-                'teacher_last_name' : obj.teacher_id.employee_id.last_name,
+                'first_name' : obj.teacher_id.employee_id.first_name,
+                'last_name' : obj.teacher_id.employee_id.last_name,
             }
         return {}
+
+    @extend_schema_field(
+        inline_serializer(
+            name='CourseData',
+            fields={
+                'course_code': serializers.CharField(),
+                'course_name': serializers.CharField(),
+                'credit_hours': serializers.IntegerField(),
+                'lab' : serializers.BooleanField(),
+                'pre_requisite': serializers.CharField(),
+            }
+        )
+    )
     def get_course_details(self, obj):
         if obj.course_code:
             return {
@@ -230,6 +280,16 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
             'percentage'
         ]
 
+    @extend_schema_field(
+        inline_serializer(
+            name='FacultyData',
+            fields={
+                'faculty_id': serializers.CharField(),
+                'first_name': serializers.CharField(),
+                'last_name': serializers.CharField(),
+            }
+        )
+    )
     def get_faculty_details(self, obj):
         if obj:
             return {
@@ -238,6 +298,17 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
                 'last_name' : obj.allocation_id.teacher_id.employee_id.last_name,
             }
         return None
+
+    @extend_schema_field(
+        inline_serializer(
+            name='CourseData',
+            fields={
+                'course_code': serializers.CharField(),
+                'course_name': serializers.CharField(),
+                'credit_hours': serializers.IntegerField(),
+            }
+        )
+    )
     def get_course_details(self, obj):
         if obj:
             return {
@@ -247,13 +318,15 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
             }
         return None
 
+    @extend_schema_field(AttendanceSerializer(many=True))
     def get_attendance_details(self, obj):
         if obj:
             attendance = Attendance.objects.filter(student_id=obj.student_id, lecture_id__allocation_id=obj.allocation_id)
             return AttendanceSerializer(attendance, many=True).data
         return None
 
-    def get_percentage(self, obj):
+
+    def get_percentage(self, obj) -> float:
         print(obj)
         if obj:
             attendance = Attendance.objects.filter(student_id=obj.student_id, lecture_id__allocation_id=obj.allocation_id)
@@ -277,6 +350,15 @@ class StudentEnrollmentCreateSerializerA(serializers.ModelSerializer):
             'confirm',
         ]
 
+    @extend_schema_field(
+        inline_serializer(
+            name='FacultyData',
+            fields={
+                'faculty_id': serializers.CharField(),
+                'faculty_name': serializers.CharField(),
+            }
+        )
+    )
     def get_faculty_data(self, obj):
         if obj:
             return {
@@ -285,6 +367,17 @@ class StudentEnrollmentCreateSerializerA(serializers.ModelSerializer):
             }
         return None
 
+    @extend_schema_field(
+        inline_serializer(
+            name='CourseData',
+            fields={
+                'course_code': serializers.CharField(),
+                'course_name': serializers.CharField(),
+                'credit_hours': serializers.IntegerField(),
+                'lab': serializers.BooleanField(),
+            }
+        )
+    )
     def get_course_data(self, obj):
         if obj:
             return {

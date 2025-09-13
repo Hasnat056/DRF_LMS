@@ -1,15 +1,16 @@
 import csv
 import io
 import re
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.db import transaction
 from django.http import Http404
-from django.shortcuts import get_list_or_404
+from django.shortcuts import get_list_or_404, get_object_or_404
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 from django.urls import reverse
-from django.core.mail import send_mail
-from DjangoRESTProject_practice import settings
 from DjangoRESTProject_practice.celery import app
 
 from Models.models import *
@@ -100,6 +101,9 @@ class PersonSerializer(serializers.ModelSerializer):
             'address',
             'qualification_set',
         ]
+        extra_kwargs = {
+            'person_id': {'read_only': True},
+        }
 
 
     def __init__(self,*args,**kwargs):
@@ -134,14 +138,6 @@ class PersonSerializer(serializers.ModelSerializer):
             cnic = f"{cleaned_cnic[:5]}-{cleaned_cnic[5:12]}-{cleaned_cnic[12]}"
             return cnic
 
-    def validate_person_id(self, value):
-        if self.instance and self.instance.person_id == value:
-            return value
-
-        pattern = r'^NUM-[A-Z]{3,6}-\d{4}-\d{2,3}$'
-        if value and not re.match(pattern, value):
-            raise serializers.ValidationError("ID must be in format NUM-DEPT-YEAR-XXX")
-        return value
 
     def validate_dob(self, value):
         if self.instance and self.instance.dob == value:
@@ -180,11 +176,9 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Faculty):
             if self.context.get('request').user.groups.filter(name='Faculty').exists():
-                extra_kwargs = {
-                    'department_id': {'read_only': True},
-                    'designation': {'read_only': True},
-                    'joining_date': {'read_only': True},
-                }
+                extra_kwargs['department_id'] = {'read_only': True}
+                extra_kwargs['designation'] = {'read_only': True}
+                extra_kwargs['joining_date'] = {'read_only': True}
         return extra_kwargs
 
 
@@ -192,15 +186,17 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
         fields = super().get_fields()
         # making fields of nested serializer; person = PersonSerializer(), read-only based on the user
         person = fields['person']
+        if self.context.get('request') == 'PUT' or self.context.get('request') == 'PATCH' or isinstance(self.instance, Faculty):
+            person.fields['user'].read_only = True
         if isinstance(self.instance,Faculty) and self.context.get('request').user.groups.filter(name='Faculty').exists():
 
+            person.fields['person_id'].read_only = True
             person.fields['first_name'].read_only = True
             person.fields['last_name'].read_only = True
             person.fields['father_name'].read_only = True
             person.fields['cnic'].read_only = True
             person.fields['dob'].read_only = True
             person.fields['gender'].read_only = True
-            person.fields['person_id'].read_only = True
             person.fields['institutional_email'].read_only = True
             person.fields['user'].read_only = True
         return fields
@@ -289,12 +285,10 @@ class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Student) and self.context.get('request').user.groups.filter(name='Student').exists():
-            extra_kwargs = {
-                'program_id': {'read_only': True},
-                'class_id': {'read_only': True},
-                'admission_date': {'read_only': True},
-                'status': {'read_only': True},
-            }
+            extra_kwargs['program_id'] = {'read_only': True}
+            extra_kwargs['class_id'] = {'read_only' : True}
+            extra_kwargs['admission_date'] = {'read_only': True}
+            extra_kwargs['status'] = {'read_only': True}
         return extra_kwargs
 
     def get_fields(self):
@@ -406,22 +400,10 @@ class DepartmentSerializer(serializers.ModelSerializer):
                                                requested_by=self.context.get('request').user)
 
         confirmation_link = self.context.get('request').build_absolute_uri(
-            reverse('confirm-change-request', args=[request.confirmation_token])
+            reverse('Admin:confirm-change-request', args=[request.confirmation_token])
         )
-
-        send_mail(
-            subject=f"HOD Change Request : {faculty.employee_id}",
-            message=f"Dear {faculty.employee_id.first_name} {faculty.employee_id.last_name},\n"
-                    f"You have been requested to appoint as the new Head of Department for the {instance.department_name}\n"
-                    f"If you are willing to uphold this responsibility, please confirm by clicking the link below:\n"
-                    f"Confirmation link : {confirmation_link} \n"
-                    f"The links will expire in 48 hours.\n"
-
-                    f"Thank you,\n"
-                    f"NAMAL UNIVERSITY, MAINWALI",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[faculty.employee_id.institutional_email],
-        )
+        from .tasks import send_hod_request_mail
+        send_hod_request_mail.apply_async(args=[request.pk, confirmation_link], eta=(timezone.now() + timedelta(minutes=2)))
 
         return instance
 
@@ -485,7 +467,7 @@ class SemesterDetailSerializer(serializers.ModelSerializer):
             'class_id',
             'semester_id'
         ]
-    def get_course_name(self, obj):
+    def get_course_name(self, obj) -> str:
         if obj.course_code:
             return obj.course_code.course_name
         return None
@@ -521,7 +503,7 @@ class SemesterClassSerializer(serializers.ModelSerializer):
 
 
 
-
+@extend_schema_field(SemesterClassSerializer(many=True))
 class SchemeOfStudiesField(serializers.Field):
     def get_attribute(self, obj):
         return obj
@@ -643,6 +625,15 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             'reviews',
         ]
 
+    @extend_schema_field(
+        inline_serializer(
+            name='StudentData',
+            fields={
+                'student_id': serializers.CharField(),
+                'name': serializers.CharField(),
+            }
+        )
+    )
     def get_student_info(self, obj):
         if obj and hasattr(obj, 'student_id'):
             return {'student_id': obj.student_id.student_id.person_id,
@@ -650,6 +641,16 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         else:
             return None
 
+    @extend_schema_field(
+        inline_serializer(
+            name='ResultData',
+            fields={
+                'result_id': serializers.IntegerField(),
+                'obtained_marks': serializers.DecimalField(max_digits=10, decimal_places=2),
+                'course_gpa': serializers.DecimalField(max_digits=10, decimal_places=2),
+            }
+        )
+    )
     def get_result(self, obj):
         if hasattr(obj, 'result'):
             result_data = {'result_id': obj.result.result_id,
@@ -744,6 +745,41 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
 
         return extra_kwargs
 
+    def validate_file_upload(self, value):
+        instance = getattr(self, 'instance', None)
+        if value is None and (instance is None or instance.file_upload is None):
+            return None
+
+        if instance and value == instance.file_upload:
+            return value
+
+        if value is None and instance and instance.file_upload:
+            return instance.file_upload
+
+        allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
+        allowed_mime_types = [
+            'image/jpeg', 'image/png',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # docx
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # pptx
+            'application/zip',
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # xlsx
+            'text/csv',
+            'application/vnd.google-apps.spreadsheet'  # Google Sheet
+        ]
+
+        ext = value.name.split('.')[-1].lower()  # Get extension
+        mime_type = getattr(value.file, 'content_type', None)
+
+        if ext not in allowed_extensions and mime_type not in allowed_mime_types:
+            raise serializers.ValidationError(
+                "Invalid file type. Allowed formats are: jpeg, png, docx, pptx, zip, pdf, xlsx, csv, google sheet."
+            )
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if value.size > max_size:
+            raise serializers.ValidationError("File size must not exceed 50 MB.")
+
+        return value
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -900,23 +936,23 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChangeRequest
         fields = '__all__'
-        read_only_fields = [
-            'change_type',
-            'department',
-            'new_hod',
-            'target_faculty',
-            'target_student',
-            'requested_at',
-            'requested_by',
-            'applied_at',
-            'confirmation_token',
-            'confirmed_at'
-        ]
+
 
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, ChangeRequest):
            extra_kwargs = {
+               'change_type': {'read_only': True},
+               'department': {'read_only': True},
+               'new_hod': {'read_only': True},
+               'target_faculty': {'read_only': True},
+               'target_student': {'read_only': True},
+               'requested_at': {'read_only': True},
+               'requested_by': {'read_only': True},
+               'applied_at': {'read_only': True},
+               'confirmation_token': {'read_only': True},
+               'confirmed_at': {'read_only': True},
+               'target_allocation' : {'read_only': True},
                'status' : {'read_only': True} if self.instance.status in ['applied', 'declined'] else {'read_only': False} ,
            }
         return extra_kwargs
@@ -951,40 +987,15 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
 
             if instance.change_type == 'hod_change':
                 if instance.new_hod:
-                    old_hod = instance.department.HOD
-                    instance.department.hod = instance.new_hod
-                    instance.department.save()
+                    old_hod = instance.department.HOD if instance.department.HOD else None
+                    department = get_object_or_404(Department, department_id=instance.department.department_id)
+                    department.hod = instance.new_hod
+                    department.save()
                     instance.status = 'applied'
                     instance.applied_at = timezone.now()
                     instance.save()
-
-                    #Sending congratulation email to newly appointed HOD
-                    send_mail(
-                        subject=f"HOD Appointment : {instance.new_hod}",
-                        message=f"Dear {instance.new_hod.employee_id.first_name} {instance.new_hod.employee_id.last_name},\n"
-                                f"Congratulations! You have been appointed as the new Head of Department for the {instance.department_name}\n"
-                                f"Looking forward to your contributions for the welfare of the department\n"
-                               
-                                f"Thank you,\n"
-                                f"NAMAL UNIVERSITY, MAINWALI",
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[instance.new_hod.employee_id.institutional_email],
-                    )
-
-                    #sending mail to the old HOD as recognition of his/her services
-                    send_mail(
-                        subject=f"HOD Change : {old_hod.employee_id}",
-                        message=f"Dear {old_hod.employee_id.first_name} {old_hod.employee_id.last_name},\n"
-                                f"Your position as the Head of department for the {instance.department_name} has been transferred to Mr. {instance.department.HOD.employee_id.first_name} {instance.department.HOD.employee_id.last_name}\n"
-                                f"We thankyou for you services and contributions to the welfare of the department \n"
-                               
-
-                                f"Thank you,\n"
-                                f"NAMAL UNIVERSITY, MAINWALI",
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[old_hod.employee_id.institutional_email],
-                    )
-                    return instance
+                    from .tasks import send_hod_change_mail
+                    send_hod_change_mail.apply_aysnc(args=[instance.pk, old_hod], eta=timezone.now()+timedelta(minutes=2))
         return instance
 
 
@@ -1041,7 +1052,7 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         return {'row_count': row_count,'insert_count': insert_count, 'error_row_count': error_row_count, 'errors': error_rows}
 
     def row_parser(self,row):
-        person_fields = ['person_id','image','first_name','last_name','father_name','gender','cnic','dob',
+        person_fields = ['image','first_name','last_name','father_name','gender','cnic','dob',
                   'contact_number','institutional_email','personal_email','religion']
         address_fields = ['country','province','city','zipcode','street_address']
         qualification_fields = ['degree_title','education_board','institution','passing_year',
@@ -1167,13 +1178,14 @@ class SemesterSerializer(serializers.ModelSerializer):
             #raise serializers.ValidationError('Set closing deadline at least a week ahead')
         return value
 
-
+    @extend_schema_field(OpenApiTypes.URI)
     def get_transcript_generation_url(self, obj):
         request = self.context.get("request")
         return request.build_absolute_uri(
             reverse("Admin:semester-transcripts-create", kwargs={"semester_id": obj.semester_id})
         )
-    def get_associated_class(self, obj):
+
+    def get_associated_class(self, obj) -> str:
         linked_class = Class.objects.filter(semesterdetails__semester_id=obj.semester_id).distinct()
         if linked_class.exists():
             return str(linked_class.first())

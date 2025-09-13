@@ -1,6 +1,7 @@
 from itertools import groupby
-
 from celery import shared_task
+from django.core.mail import send_mail
+from rest_framework.generics import get_object_or_404
 
 from Models.models import *
 from django.core.cache import cache
@@ -297,3 +298,104 @@ def cache_enrollment_data_task(user_id):
         cache.set(cache_key, serializer.data, timeout=60 *10)
 
     return 'Enrollment data has been cached successfully'
+
+
+# Email Sending tasks
+@shared_task
+def send_hod_request_mail(request_id, confirmation_link):
+    request = get_object_or_404(ChangeRequest, pk=request_id)
+    faculty = request.new_hod
+
+    send_mail(
+        subject=f"HOD Change Request : {faculty.employee_id}",
+        message=f"Dear {faculty.employee_id.first_name} {faculty.employee_id.last_name},\n"
+                f"You have been requested to appoint as the new Head of Department for the {request.department.department_name}\n"
+                f"If you are willing to uphold this responsibility, please confirm by clicking the link below:\n"
+                f"Confirmation link : {confirmation_link} \n"
+                f"The links will expire in 48 hours.\n"
+
+                f"Thank you,\n"
+                f"NAMAL UNIVERSITY, MAINWALI",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[faculty.employee_id.institutional_email],
+    )
+    return 'Email sent successfully'
+
+@shared_task
+def send_hod_change_mail(request_id, old_hod):
+    request = get_object_or_404(ChangeRequest, pk=request_id)
+
+    send_mail(
+        subject=f"HOD Appointment : {request.new_hod}",
+        message=f"Dear {request.new_hod.employee_id.first_name} {request.new_hod.employee_id.last_name},\n"
+                f"Congratulations! You have been appointed as the new Head of Department for the {request.department.department_name}\n"
+                f"Looking forward to your contributions for the welfare of the department\n"
+
+                f"Thank you,\n"
+                f"NAMAL UNIVERSITY, MAINWALI",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[request.new_hod.employee_id.institutional_email],
+    )
+
+    if old_hod is not None:
+        send_mail(
+            subject=f"HOD Change : {old_hod.employee_id}",
+            message=f"Dear {old_hod.employee_id.first_name} {old_hod.employee_id.last_name},\n"
+                    f"Your position as the Head of department for the {request.department.department_name} has been transferred to Mr. {request.department.HOD.employee_id.first_name} {request.department.HOD.employee_id.last_name}\n"
+                    f"We thankyou for you services and contributions to the welfare of the department \n"
+                    f"Thank you,\n"
+                    f"NAMAL UNIVERSITY, MAINWALI",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[old_hod.employee_id.institutional_email],
+        )
+
+    return 'Emails sent successfully'
+
+
+@shared_task
+def send_result_calculation_confirmation_mail(request_id):
+    request = get_object_or_404(ChangeRequest, pk=request_id)
+
+    send_mail(
+        subject=f"Result Calculation Request Approved",
+        message=f"Dear Faculty member,\n"
+                "Your request to calculate the result for the course allocation: \n"
+                f"Course Allocation ID: {request.target_allocation.allocation_id}\n"
+                f"Faculty ID: {request.target_allocation.teacher_id.employee_id.person_id}\n"
+                f"Faculty Name: {request.target_allocation.teacher_id.employee_id.first_name} {request.target_allocation.teacher_id.employee_id.last_name}\n"
+                f"Semester ID: {request.target_allocation.semester_id}\n"
+                f"Session: {request.target_allocation.session}\n"
+                f"has been approved by the admin. Kindly visit your portal to apply changes\n"
+
+
+                f"Thank you,\n"
+                f"NAMAL UNIVERSITY, MAINWALI",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[request.target_allocation.teacher_id.employee_id.institutional_email],
+    )
+
+    return 'Emails sent successfully'
+
+@shared_task
+def send_result_calculation_mail(request_id,confirmation_link, recipient_email):
+    request = get_object_or_404(ChangeRequest, pk=request_id)
+    allocation = request.target_allocation
+    send_mail(
+        subject=f"Result Calculation Request : {allocation.allocation_id}",
+        message=f"Dear Admin,\n"
+                "A result calculation request has been made for the course allocation: \n"
+                f"Course Allocation ID: {allocation.allocation_id}\n"
+                f"Faculty ID: {allocation.teacher_id.employee_id.person_id}\n"
+                f"Faculty Name: {allocation.teacher_id.employee_id.first_name} {allocation.teacher_id.employee_id.last_name}\n"
+                f"Semester ID: {allocation.semester_id}\n"
+                f"Session: {allocation.session}\n"
+                f"To approve this request click the link below:\n"
+                f"Confirmation link : {confirmation_link} \n"
+                f"The links will expire in 48 hours.\n"
+
+                f"Thank you,\n"
+                f"NAMAL UNIVERSITY, MAINWALI",
+        from_email=request.requested_by.username,
+        recipient_list=[recipient_email],
+    )
+    return 'Emails sent successfully'

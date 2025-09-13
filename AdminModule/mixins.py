@@ -31,12 +31,18 @@ class PersonSerializerMixin:
 
         if person_data and model_data:
             if model == 'Faculty':
+                count = Faculty.objects.filter(department_id=model_data['department_id']).count()
+                person_id = f'NUM-{model_data["department_id"]}-{str(timezone.now().year)}-{str(count+1)}'
+                person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Faculty', user=user)
                 faculty = Faculty.objects.create(**model_data, employee_id=person)
                 group = Group.objects.get(name="Faculty")
                 user.groups.add(group)
                 instance = faculty
             elif model == 'Student':
+                count = Student.objects.filter(program_id=model_data['program_id'], admission_date=timezone.now().year).count()
+                person_id = f'NUM-{model_data['program_id']}-{str(timezone.now().year)}-{str(count+1)}'
+                person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Student', user=user)
                 student = Student.objects.create(**model_data, student_id=person)
                 group = Group.objects.get(name="Student")

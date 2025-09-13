@@ -1,6 +1,5 @@
-version: "3.9"
-
 services:
+  # Redis
   redis-server:
     image: redis/redis-stack
     container_name: redis-server
@@ -8,21 +7,27 @@ services:
       - "6379:6379"
       - "8001:8001"
     networks:
-      - drf_network
+      - lms_network
 
+  # DRF backend
   web:
     build: .
     container_name: drf-web
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
+      - code_files:/code
     ports:
       - "8000:8000"
     depends_on:
       - redis-server
+      - python-compiler
+      - c-compiler
+      - java-compiler
     networks:
-      - drf_network
+      - lms_network
 
+  # Celery worker
   celery-worker:
     build: .
     container_name: celery-worker
@@ -33,8 +38,38 @@ services:
       - redis-server
       - web
     networks:
-      - drf_network
+      - lms_network
+
+  # Python compiler
+  python-compiler:
+    build: ./Compilers/python_compiler
+    container_name: python-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - lms_network
+
+  # C/C++ compiler
+  c-compiler:
+    build: ./Compilers/c_compiler
+    container_name: c-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - lms_network
+
+  # Java compiler
+  java-compiler:
+    build: ./Compilers/java_compiler
+    container_name: java-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - lms_network
+
+volumes:
+  code_files:
 
 networks:
-  drf_network:
+  lms_network:
     driver: bridge

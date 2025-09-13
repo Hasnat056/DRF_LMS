@@ -1,0 +1,43 @@
+# ===== Python =====
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+
+# Virtual environments
+venv/
+.venv/
+
+# Django specific
+db.sqlite3
+media/
+staticfiles/
+
+# Environment variables
+.env
+*.env
+
+# Pytest / coverage
+.coverage
+htmlcov/
+*.log
+
+# ===== Docker =====
+# Ignore volumes and build files
+docker-data/
+*.pid
+
+# ===== VSCode / Editors =====
+.vscode/
+.idea/
+
+# ===== System Files =====
+.DS_Store
+Thumbs.db
+
+
+/migrations/
+
+# ===== Cache =====
+*.cache

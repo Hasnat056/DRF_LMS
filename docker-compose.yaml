@@ -9,6 +9,20 @@ services:
     networks:
       - lms_network
 
+  # Database
+  database:
+    image: mysql:8.0
+    container_name: mysql-database
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: LMS
+      MYSQL_USER: adminUser
+      MYSQL_PASSWORD: hasnat1234
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - lms_network
+
   # DRF backend
   web:
     build: .
@@ -20,6 +34,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      - database
       - redis-server
       - python-compiler
       - c-compiler
@@ -69,6 +84,7 @@ services:
 
 volumes:
   code_files:
+  mysql_data:
 
 networks:
   lms_network:

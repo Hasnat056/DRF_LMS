@@ -146,27 +146,27 @@ class AdminDashboardAPIView(
         allocation_total = CourseAllocation.objects.count()
         enrollment_total = Enrollment.objects.count()
 
-        students_status_count = (
+        students_status_count = list((
             Student.objects.values('status')
             .annotate(count=Count('student_id'))
-        )
+        ))
 
-        allocations_status_count = (
+        allocations_status_count = list((
             CourseAllocation.objects.values('status')
             .annotate(count=Count('allocation_id'))
-        )
+        ))
 
-        enrollments_status_count = (
+        enrollments_status_count = list((
             Enrollment.objects.values('status')
             .annotate(count=Count('enrollment_id'))
-        )
+        ))
 
-        classes_student_count = (
+        classes_student_count = list((
             Class.objects.values('class_id')
             .annotate(count=Count('student'))
-        )
+        ))
 
-        departments_data = (
+        departments_data = list((
             Department.objects
             .annotate(
                 student_count=Count('program__student', distinct=True),
@@ -175,21 +175,21 @@ class AdminDashboardAPIView(
                 enrollment_count=Count('program__student__enrollment', distinct=True),
             )
             .values('department_id', 'student_count', 'faculty_count', 'program_count')
-        )
+        ))
 
-        enrollment_yearly = (
+        enrollment_yearly = list((
             Enrollment.objects.annotate(year=ExtractYear('enrollment_date'))
             .values('year')
             .annotate(count=Count('enrollment_id'))
-        )
+        ))
 
-        yearly_admission = (
+        yearly_admission = list((
             Student.objects
             .annotate(year=ExtractYear('admission_date'))
             .values('program_id__department_id__department_name', 'year')
             .annotate(count=Count('student_id'))
             .order_by('program_id__department_id__department_name', 'year')
-        )
+        ))
 
         data = {
             'admin': admin_data,

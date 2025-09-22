@@ -6,7 +6,7 @@ urlpatterns =[
 
     path ('profile/', AdminProfileAPIView.as_view(), name='admin-profile'),
 
-    path ('dashboard/',AdminDashboardAPIView.as_view()),
+    path ('dashboard/',AdminDashboardAPIView.as_view(), name='admin-dashboard'),
 
     path('faculty/', FacultyListCreateAPIView.as_view()),
     path('faculty/<str:employee_id>/', FacultyRetrieveUpdateAPIView.as_view(), name='faculty-detail'),

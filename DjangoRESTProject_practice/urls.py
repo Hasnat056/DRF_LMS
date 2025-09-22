@@ -40,7 +40,7 @@ urlpatterns = [
         path('accounts/', include('django.contrib.auth.urls')),
 
         # Project urls
-        path('api/admin/', include('AdminModule.urls')),
+        path('api/admin/', include('AdminModule.urls', namespace='Admin')),
         path('api/faculty/', include('FacultyModule.urls')),
         path('api/student/', include('StudentModule.urls')),
 

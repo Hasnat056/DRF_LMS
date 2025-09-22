@@ -3,8 +3,8 @@ POST http://localhost:8000/api/token/
 Content-Type: application/json
 
 {
-  "username" : "numadm10@namal.edu.pk",
-  "password" : "ADM1012345678"
+  "username" : "rhays056@gmail.com",
+  "password" : "admin12345678"
 }
 
 
@@ -14,7 +14,7 @@ Content-Type: application/json
 ### Admin Dashboard
 GET http://localhost:8000/api/admin/dashboard/
 Content-Type: application/json
-Authorization:
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU3ODE2MjM5LCJpYXQiOjE3NTc4MTU5MzksImp0aSI6IjgxZjRjYjMxNzJlNDQ4NWY5OTMwNzI0NjU0NGRlYjdiIiwidXNlcl9pZCI6IjkifQ.5lyvXFPcl5f2JePDqVxuvlqAR9wRNkD1wuYsdxhmdiw
 
 
 ### Admin Faculty Create

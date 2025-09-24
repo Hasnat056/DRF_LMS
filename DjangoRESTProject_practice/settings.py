@@ -51,7 +51,7 @@ INSTALLED_APPS = [
     'AdminModule',
     'FacultyModule',
     'StudentModule',
-    'Compilers',
+
 ]
 
 MIDDLEWARE = [
@@ -88,16 +88,17 @@ WSGI_APPLICATION = 'DjangoRESTProject_practice.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
+# using mysql container database
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'LMS',
+        'USER': 'adminUser',
+        'PASSWORD': 'admin123',
+        'HOST': 'database',
+        'PORT': '3306',
     }
 }
-if 'pytest' in sys.argv[0] or 'test' in sys.argv[0]:
-    print('using test db')
-    DATABASES['default']['NAME'] = BASE_DIR/'test_db.sqlite3'
 
 
 # Password validation

@@ -1,0 +1,95 @@
+services:
+  # Redis
+  redis-server:
+    image: redis/redis-stack
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    networks:
+      - nexus_network
+
+  database:
+    env_file:
+      - .env
+    image: mysql:8.0
+    container_name: database
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - nexus_network
+
+  # DRF backend
+  backend:
+    env_file:
+      - .env
+    build: .
+    container_name: backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+      - code_files:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis-server
+      - python-compiler
+      - c-compiler
+      - java-compiler
+    networks:
+      - nexus_network
+
+  # Celery worker
+  celery-worker:
+    env_file:
+      - .env
+    build: .
+    container_name: celery-worker
+    command: celery -A NexusAPI worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis-server
+      - backend
+    networks:
+      - nexus_network
+
+  # Python compiler
+  python-compiler:
+    build: ./Compilers/python_compiler
+    container_name: python-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+  # C/C++ compiler
+  c-compiler:
+    build: ./Compilers/c_compiler
+    container_name: c-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+  # Java compiler
+  java-compiler:
+    build: ./Compilers/java_compiler
+    container_name: java-compiler
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+volumes:
+  code_files:
+  mysql_data:
+
+networks:
+  nexus_network:
+    driver: bridge

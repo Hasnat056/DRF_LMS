@@ -37,7 +37,7 @@ docker-data/
 Thumbs.db
 
 
-/migrations/
+
 
 # ===== Cache =====
 *.cache

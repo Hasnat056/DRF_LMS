@@ -186,9 +186,9 @@ class AdminDashboardAPIView(
         yearly_admission = list((
             Student.objects
             .annotate(year=ExtractYear('admission_date'))
-            .values('program_id__department_id__department_name', 'year')
+            .values('program__department__department_name', 'year')
             .annotate(count=Count('student_id'))
-            .order_by('program_id__department_id__department_name', 'year')
+            .order_by('program__department__department_name', 'year')
         ))
 
         data = {
@@ -265,7 +265,7 @@ class FacultyListCreateAPIView(
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['department_id', 'designation']
+    filterset_fields = ['department', 'designation']
     search_fields = ['employee_id__first_name', 'employee_id__last_name', 'employee_id__institutional_email']
 
     def list(self, request, *args, **kwargs):
@@ -293,8 +293,8 @@ class FacultyListCreateAPIView(
             if 'search' in query_params or 'ordering' in filter_params:
                 return super().list(request, *args, **kwargs)
 
-            if 'department_id' in filter_params and 'designation' in filter_params and len(filter_params)==2:
-                cache_key = f'admin:faculty:{filter_params.get("department_id")}:{filter_params.get("designation")}'
+            if 'department' in filter_params and 'designation' in filter_params and len(filter_params)==2:
+                cache_key = f'admin:faculty:{filter_params.get("department")}:{filter_params.get("designation")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -304,8 +304,8 @@ class FacultyListCreateAPIView(
                 return Response(data, status=status.HTTP_200_OK)
 
             # if applied filter is of department
-            if 'department_id' in filter_params and len(filter_params)==1:
-                value = query_params.get('department_id')
+            if 'department' in filter_params and len(filter_params)==1:
+                value = query_params.get('department')
                 cache_key = f'admin:faculty:department:{value}'
                 data = cache.get(cache_key)
                 if data is None:
@@ -370,7 +370,7 @@ class StudentListCreateAPIView(
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['program_id', 'class_id', 'program_id__department_id','status']
+    filterset_fields = ['program', 'class_', 'program__department','status']
     search_fields = ['student_id__first_name', 'student_id__last_name', 'student_id__institutional_email']
 
     def list(self, request, *args, **kwargs):
@@ -400,8 +400,8 @@ class StudentListCreateAPIView(
                 return super().list(request, *args, **kwargs)
 
             if len(filter_params)==2:
-                if 'program_id__department_id' in filter_params and 'status' in filter_params:
-                    cache_key = f'admin:students{query_params.get("program_id__department_id")}:{query_params.get("status")}'
+                if 'program__department' in filter_params and 'status' in filter_params:
+                    cache_key = f'admin:students{query_params.get("program__department")}:{query_params.get("status")}'
                     data = cache.get(cache_key)
                     if data is None:
                         return super().list(request, *args, **kwargs)
@@ -413,7 +413,7 @@ class StudentListCreateAPIView(
                 else:
                     return super().list(request, *args, **kwargs)
 
-            if 'program_id' in filter_params and len(filter_params)==1:
+            if 'program' in filter_params and len(filter_params)==1:
                 cache_key = f'admin:students:program:{query_params.get("program_id")}'
                 data = cache.get(cache_key)
                 if data is None:
@@ -424,8 +424,8 @@ class StudentListCreateAPIView(
                     return self.get_paginated_response(page)
                 return Response(data, status=status.HTTP_200_OK)
 
-            if 'program_id__department_id' in filter_params and len(filter_params)==1:
-                cache_key = f'admin:students:department:{query_params.get("program_id__department_id")}'
+            if 'program__department' in filter_params and len(filter_params)==1:
+                cache_key = f'admin:students:department:{query_params.get("program__department")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -435,8 +435,8 @@ class StudentListCreateAPIView(
                     return self.get_paginated_response(page)
                 return Response(data, status=status.HTTP_200_OK)
 
-            if 'class_id' in filter_params and len(filter_params)==1:
-                cache_key = f'admin:students:class:{query_params.get("class_id")}'
+            if 'class_' in filter_params and len(filter_params)==1:
+                cache_key = f'admin:students:class:{query_params.get("class_")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -509,7 +509,7 @@ class ProgramListCreateAPIView(
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['department_id', 'total_semesters']
+    filterset_fields = ['department', 'total_semesters']
     search_fields = ['program_id', 'program_name']
 
     def list(self, request, *args, **kwargs):
@@ -534,8 +534,8 @@ class ProgramListCreateAPIView(
             if 'search' in query_params or 'ordering' in filter_params:
                 return super().list(request, *args, **kwargs)
 
-            if len(filter_params) == 1 and 'department_id' in filter_params:
-                cache_key = f'admin:programs:department:{query_params.get("department_id")}'
+            if len(filter_params) == 1 and 'department' in filter_params:
+                cache_key = f'admin:programs:department:{query_params.get("department")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -645,7 +645,7 @@ class SemesterListAPIView(
     queryset = Semester.objects.all()
     serializer_class = SemesterSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['semesterdetails__class_id']
+    filterset_fields = ['semesterdetails__class_']
     
     def list(self, request, *args, **kwargs):
         cache_key = 'admin:semesters_list'
@@ -669,8 +669,8 @@ class SemesterListAPIView(
         if 'ordering' in filter_params or 'search' in filter_params:
             return super().list(request, *args, **kwargs)
 
-        if 'semesterdetails__class_id' in filter_params:
-            cache_key= f'admin:semesters:class:{filter_params.get('semesterdetails__class_id')}'
+        if 'semesterdetails__class_' in filter_params:
+            cache_key= f'admin:semesters:class:{filter_params.get('semesterdetails__class_')}'
             data = cache.get(cache_key)
             if data is None:
                 return super().list(request, *args, **kwargs)
@@ -702,8 +702,8 @@ class ClassListCreateAPIView(
     queryset = Class.objects.all()
     serializer_class = ClassSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['program_id', 'program_id__department_id','batch_year']
-    search_fields = ['program_id', 'batch_year']
+    filterset_fields = ['program', 'program__department','batch_year']
+    search_fields = ['program', 'batch_year']
 
     def perform_create(self, serializer):
         serializer.save()
@@ -721,7 +721,7 @@ class ClassRetrieveUpdateAPIView(
     serializer_class = ClassSerializer
     lookup_field = 'class_id'
     filter_backends = [OrderingFilter]
-    ordering_fields = ['semesterdetails__semester_id__semester_no']
+    ordering_fields = ['semesterdetails__semester__semester_no']
 
 
 class CourseAllocationListCreateAPIView (
@@ -731,10 +731,10 @@ class CourseAllocationListCreateAPIView (
     queryset = CourseAllocation.objects.all()
     serializer_class = CourseAllocationSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['teacher_id', 'status', 'course_code', 'semester_id']
-    search_fields = ['teacher_id__employee_id__person_id', 'teacher_id__employee_id__first_name',
-                     'teacher_id__employee_id__last_name','enrollment__student_id__student_id__first_name',
-                     'course_code__course_code', ]
+    filterset_fields = ['faculty', 'status', 'course', 'semester']
+    search_fields = ['faculty__employee_id__person_id', 'faculty__employee_id__first_name',
+                     'faculty__employee_id__last_name','enrollment__student__student_id__first_name',
+                     'course__course_code', ]
 
     def list(self, request, *args, **kwargs):
         query_params = request.query_params
@@ -747,8 +747,8 @@ class CourseAllocationListCreateAPIView (
         if 'ordering' in filter_params or 'search' in filter_params:
             return super().list(request, *args, **kwargs)
 
-        if len(filter_params)==1 and ('semester_id' in filter_params or 'teacher_id' in filter_params):
-            cache_key = f'admin:allocations:semester:{filter_params.get("semester_id")}' if 'semester_id' in filter_params else f'admin:allocations:faculty:{filter_params.get("teacher_id")}'
+        if len(filter_params)==1 and ('semester' in filter_params or 'faculty' in filter_params):
+            cache_key = f'admin:allocations:semester:{filter_params.get("semester")}' if 'semester' in filter_params else f'admin:allocations:faculty:{filter_params.get("faculty")}'
             data = cache.get(cache_key)
             if data is None:
                 cache_courseAllocation_data_task.delay(self.request.user.id)
@@ -793,11 +793,11 @@ class EnrollmentListCreateAPIView(
     queryset = Enrollment.objects.all()
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['student_id','allocation_id__teacher_id',
-                        'status', 'allocation_id__semester_id','result__course_gpa']
+    filterset_fields = ['student','allocation__faculty',
+                        'status', 'allocation__semester','result__course_gpa']
 
-    search_fields = ['student_id__student_id__person_id', 'student_id__student_id__first_name',
-                     'student_id__student_id__last_name']
+    search_fields = ['student__student_id__person_id', 'student__student_id__first_name',
+                     'student__student_id__last_name']
 
     def list(self, request, *args, **kwargs):
         query_params = request.query_params
@@ -810,8 +810,8 @@ class EnrollmentListCreateAPIView(
         if 'ordering' in filter_params or 'search' in filter_params:
             return super().list(request, *args, **kwargs)
 
-        if len(filter_params) == 1 and ('student_id' in filter_params or 'allocation_id__teacher_id' in filter_params):
-            cache_key = f'admin:enrollments:student:{filter_params.get("student_id")}' if 'student_id' in filter_params else f'admin:enrollments:faculty:{filter_params.get("allocation_id__teacher_id")}'
+        if len(filter_params) == 1 and ('student' in filter_params or 'allocation__faculty' in filter_params):
+            cache_key = f'admin:enrollments:student:{filter_params.get("student")}' if 'student' in filter_params else f'admin:enrollments:faculty:{filter_params.get("allocation__faculty")}'
             data = cache.get(cache_key)
             if data is None:
                 cache_enrollment_data_task.delay(self.request.user.id)
@@ -842,7 +842,7 @@ class EnrollmentRetrieveUpdateDestroyAPIView(
         cache_enrollment_data_task.delay(self.request.user.id)
 
     def perform_destroy(self, instance):
-        result = Result.objects.get(enrollment_id=instance.enrollment_id)
+        result = Result.objects.get(enrollment=instance.enrollment_id)
         if result.course_gpa:
             raise PermissionDenied('This enrollment cannot be deleted')
         else:
@@ -858,9 +858,9 @@ class TranscriptListCreateAPIView(
     queryset = Transcript.objects.all()
     serializer_class = TranscriptSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['semester_id', 'student_id']
-    search_fields = ['student_id__student_id__person_id', 'student_id__student_id__first_name',
-                     'student_id__student_id__last_name']
+    filterset_fields = ['semester', 'student']
+    search_fields = ['student__student_id__person_id', 'student__student_id__first_name',
+                     'student__student_id__last_name']
 
 class TranscriptBulkCreateAPIView(
     IsSuperUserOrAdminMixin,
@@ -940,7 +940,7 @@ class ChangeRequestView(APIView):
         change_request.confirmed_at = datetime.now()
         change_request.save()
         if change_request.change_type == 'result_calculation':
-            send_result_calculation_confirmation_mail.apply_aysnc(args=[change_request.pk],eta=timezone.now()+timedelta(minutes=2))
+            send_result_calculation_confirmation_mail.apply_async(args=[change_request.pk],eta=timezone.now()+timedelta(minutes=2))
 
 
         return Response({"message": "Change request confirmed successfully!"},status=status.HTTP_200_OK)
@@ -977,13 +977,13 @@ class BulkCreateAPIView(
                           'total_marks_5','obtained_marks_5','is_current_5']
 
         if target_model == 'faculty':
-            file_headers.append('department_id',)
+            file_headers.append('department',)
             file_headers.append('designation',)
             file_headers.append('joining_date',)
 
         if target_model == 'student':
-            file_headers.append('program_id',)
-            file_headers.append('class_id',)
+            file_headers.append('program',)
+            file_headers.append('student_class',)
             file_headers.append('admission_date',)
 
 

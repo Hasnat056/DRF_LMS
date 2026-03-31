@@ -10,11 +10,30 @@ from django.db.models import CheckConstraint, Q
 def current_time():
     return timezone.now().date()
 
+
+def course_allocation_upload_path(instance, filename):
+    # instance.allocation_id exists only after save, so fallback if None
+    allocation_pk = instance.allocation_id or 'temp'
+    return f'allocations/{allocation_pk}/uploads/{filename}'
+
+
+def assessment_upload_path(instance, filename):
+    allocation_pk = instance.allocation.allocation_id if instance.allocation else 'temp'
+    assessment_pk = instance.assessment_id or 'temp'
+    return f'allocations/{allocation_pk}/{assessment_pk}/uploads/{filename}'
+
+def assessment_checked_upload_path(instance, filename):
+    assessment_pk = instance.assessment_id if instance.assessment else 'temp_assessment'
+    allocation_pk = instance.assessment.allocation.allocation_id if instance.assessment and instance.assessment.allocation else 'temp_allocation'
+    enrollment_pk = instance.enrollment.enrollment_id if instance.enrollment else 'temp_enrollment'
+    return f'allocations/{allocation_pk}/{assessment_pk}/{enrollment_pk}/uploads/{filename}'
+
+
 class Department(models.Model):
     department_id = models.CharField(max_length=10, primary_key=True)
     department_name = models.CharField(max_length=100)
     department_inauguration_date = models.DateField(db_column='establishmentDate', blank=True, null=True)
-    HOD = models.ForeignKey('Faculty', on_delete=models.SET_NULL, null=True, blank=True)
+    HOD = models.ForeignKey('Faculty', on_delete=models.SET_NULL, null=True, blank=True, related_name='department_hod')
 
     class Meta:
         db_table = 'department'
@@ -25,7 +44,7 @@ class Department(models.Model):
 class Program (models.Model):
     program_id = models.CharField(primary_key=True, max_length=10)
     program_name = models.CharField(max_length=100, db_index=True)
-    department_id = models.ForeignKey('Department', on_delete=models.RESTRICT, null=True)
+    department = models.ForeignKey('Department', on_delete=models.RESTRICT, null=True, db_index=True)
     total_semesters = models.IntegerField(blank=True, default=8)
     fee_per_semester = models.IntegerField(blank=True, null=True)
 
@@ -39,7 +58,7 @@ class Program (models.Model):
 
 class Class(models.Model):
     class_id = models.AutoField(primary_key=True)
-    program_id = models.ForeignKey('Program', on_delete=models.RESTRICT, null=True)
+    program = models.ForeignKey('Program', on_delete=models.RESTRICT)
     batch_year = models.IntegerField(blank=True, null=True)
 
     class Meta:
@@ -48,7 +67,7 @@ class Class(models.Model):
 
 
     def __str__(self):
-        return f"{self.program_id}-{self.batch_year}"
+        return f"{self.program.program_id}-{self.batch_year}"
 
 
 
@@ -59,7 +78,7 @@ class Semester(models.Model):
         ('Completed', 'Completed'),
     ]
     semester_id = models.AutoField(primary_key=True)
-    semester_no = models.IntegerField()
+    semester_no = models.PositiveIntegerField()
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Inactive', db_index=True)
     session = models.CharField(max_length=15, blank=True, null=True, db_index=True)
     activation_deadline = models.DateTimeField(blank=True, null=True)
@@ -73,7 +92,7 @@ class Semester(models.Model):
         class_id = self.semesterdetails_set.values_list('class_id', flat=True).first()
         if class_id:
             class_object = Class.objects.get(class_id=class_id)
-            class_name = f'{class_object.program_id.program_id} {class_object.batch_year}'
+            class_name = f'{class_object.program.program_id} {class_object.batch_year}'
             return f"{class_name}-0{self.semester_no}-{self.session}"
         else:
             return f"None-0{self.semester_no}-{self.session}"
@@ -84,7 +103,7 @@ class Semester(models.Model):
 class Course(models.Model):
     course_code = models.CharField(primary_key=True, max_length=20)
     course_name = models.CharField(max_length=100, db_index=True)
-    credit_hours = models.IntegerField()
+    credit_hours = models.PositiveIntegerField(default=0)
     lab = models.BooleanField(default=False)
     pre_requisite = models.ForeignKey('self', on_delete=models.SET_NULL, db_column='preRequisite', blank=True, null=True)
     description = models.TextField(blank=True, null=True)
@@ -101,12 +120,12 @@ class Course(models.Model):
 
 class SemesterDetails (models.Model):
     id = models.AutoField(primary_key=True)
-    course_code = models.ForeignKey('Course', on_delete=models.CASCADE, blank=True, null=True)
-    class_id = models.ForeignKey('Class', on_delete=models.RESTRICT)
-    semester_id = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
+    course = models.ForeignKey('Course', on_delete=models.CASCADE, blank=True, null=True)
+    student_class = models.ForeignKey('Class', on_delete=models.RESTRICT,)
+    semester = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
     class Meta:
         db_table = 'semesterDetails'
-        unique_together = (('course_code', 'class_id', 'semester_id'),)
+        unique_together = (('course', 'student_class', 'semester'),)
         ordering = ['id']
 
 
@@ -120,30 +139,26 @@ class CourseAllocation(models.Model):
         ('Cancelled','Cancelled'),
     ]
     allocation_id = models.AutoField(primary_key=True)
-    teacher_id = models.ForeignKey('Faculty', on_delete=models.RESTRICT, db_index=True)
-    course_code = models.ForeignKey('Course', on_delete=models.RESTRICT)
-    semester_id = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
+    faculty = models.ForeignKey('Faculty', on_delete=models.RESTRICT, db_index=True)
+    course = models.ForeignKey('Course', on_delete=models.RESTRICT)
+    semester = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
     session = models.CharField(max_length=20, blank=True, null=True, db_index=True)
     status = models.CharField(max_length=9, choices=STATUS_CHOICES, default='Inactive', db_column='status')
 
     class Meta:
         db_table = 'courseAllocation'
-        ordering = ['allocation_id', 'teacher_id', 'semester_id']
+        unique_together = (('faculty', 'course', 'semester'),)
+        ordering = ['allocation_id', 'faculty', 'semester']
 
     def __str__(self):
-        return f"[{self.course_code}_{self.teacher_id}_{self.session}]"
-
-    def course_allocation_upload_path(instance, filename):
-        # instance.allocation_id exists only after save, so fallback if None
-        allocation_pk = instance.allocation_id or 'temp'
-        return f'allocations/{allocation_pk}/uploads/{filename}'
-
-    file_upload = models.FileField(
-        upload_to=course_allocation_upload_path,
-        blank=True, null=True
-    )
+        return f"[{self.course.course_code}_{self.faculty.employee_id.person_id}_{self.session}]"
 
 
+class AllocationFile(models.Model):
+    allocation = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE)
+    file = models.FileField(upload_to=course_allocation_upload_path)
+    file_name = models.CharField(max_length=100, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
 
 class Assessment(models.Model):
@@ -157,7 +172,7 @@ class Assessment(models.Model):
         ('Lab', 'Lab')
     ]
     assessment_id = models.AutoField( primary_key=True)
-    allocation_id = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE, db_column='allocationID', db_index=True)
+    allocation = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE, db_index=True)
     assessment_type = models.CharField(choices=ASSESSMENT_TYPE_CHOICES, max_length=15)
     assessment_name = models.CharField(max_length=20)
     weightage = models.IntegerField()
@@ -172,43 +187,35 @@ class Assessment(models.Model):
         ordering = ['assessment_id']
 
     def __str__(self):
-        return f"{self.allocation_id}--{self.assessment_name}"
+        return f"{self.allocation.allocation_id}--{self.assessment_name}"
 
-    def assessment_upload_path(instance, filename):
-        allocation_pk = instance.allocation_id.allocation_id if instance.allocation_id else 'temp'
-        assessment_pk = instance.assessment_id or 'temp'
-        return f'allocations/{allocation_pk}/{assessment_pk}/uploads/{filename}'
 
-    file_upload = models.FileField(
-        upload_to=assessment_upload_path,
-        blank=True, null=True
-    )
+
+class AssessmentFile(models.Model):
+    assessment = models.ForeignKey(Assessment, on_delete=models.CASCADE)
+    file = models.FileField(upload_to=assessment_upload_path)
+    file_name = models.CharField(max_length=100, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
 
 class AssessmentChecked(models.Model):
     id = models.AutoField(primary_key=True)
-    assessment_id = models.ForeignKey('Assessment', on_delete=models.CASCADE)
-    enrollment_id = models.ForeignKey('Enrollment', on_delete=models.CASCADE)
+    assessment = models.ForeignKey('Assessment', on_delete=models.CASCADE)
+    enrollment = models.ForeignKey('Enrollment', on_delete=models.CASCADE)
     obtained = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    student_upload = models.FileField(upload_to=assessment_checked_upload_path, blank=True, null=True)
+    uploaded_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = 'assessmentChecked'
-        unique_together = (('assessment_id', 'enrollment_id'),)
+        unique_together = (('assessment', 'enrollment'),)
 
-    def assessment_checked_upload_path(instance, filename):
-        assessment_pk = instance.assessment_id.assessment_id if instance.assessment_id else 'temp_assessment'
-        allocation_pk = instance.assessment_id.allocation_id.allocation_id if instance.assessment_id and instance.assessment_id.allocation_id else 'temp_allocation'
-        enrollment_pk = instance.enrollment_id.enrollment_id if instance.enrollment_id else 'temp_enrollment'
-        return f'allocations/{allocation_pk}/{assessment_pk}/{enrollment_pk}/uploads/{filename}'
 
-    student_upload = models.FileField(
-        upload_to=assessment_checked_upload_path,
-        blank=True, null=True
-    )
+
 
 class Lecture(models.Model):
     lecture_id = models.CharField(primary_key=True, max_length=10)
-    allocation_id = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE)
+    allocation = models.ForeignKey('CourseAllocation', on_delete=models.CASCADE)
     lecture_no = models.PositiveIntegerField()
     venue = models.CharField(max_length=50, blank=True, null=True)
     starting_time = models.DateTimeField(db_column='startingTime')
@@ -221,8 +228,8 @@ class Lecture(models.Model):
 
 
     def save(self, *args, **kwargs):
-        if not self.lecture_id and self.allocation_id and self.lecture_no:
-            self.lecture_id = f'{self.allocation_id}-{self.lecture_no}'
+        if not self.lecture_id and self.allocation and self.lecture_no:
+            self.lecture_id = f'{self.allocation.allocation_id}-{self.lecture_no}'
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -232,13 +239,13 @@ class Lecture(models.Model):
 class Attendance(models.Model):
     id = models.AutoField(primary_key=True)
     attendance_date = models.DateField(blank=True, null=True)
-    student_id = models.ForeignKey('Student', on_delete=models.CASCADE, db_index=True)
-    lecture_id = models.ForeignKey('Lecture', on_delete=models.CASCADE)
+    enrollment = models.ForeignKey('Enrollment', on_delete=models.CASCADE, db_index=True)
+    lecture = models.ForeignKey('Lecture', on_delete=models.CASCADE)
     is_present = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'attendance'
-        unique_together = (('attendance_date', 'student_id','lecture_id'),)
+        unique_together = (('attendance_date', 'enrollment','lecture'),)
 
 
 class Enrollment(models.Model):
@@ -249,26 +256,26 @@ class Enrollment(models.Model):
         ('Dropped', 'Dropped'),
     ]
     enrollment_id = models.AutoField(primary_key=True)
-    student_id = models.ForeignKey('Student', on_delete=models.RESTRICT, db_index=True)
-    allocation_id = models.ForeignKey('CourseAllocation', on_delete=models.RESTRICT)
-    enrollment_date = models.DateTimeField(default=timezone.now)
+    student = models.ForeignKey('Student', on_delete=models.RESTRICT, db_index=True)
+    allocation = models.ForeignKey('CourseAllocation', on_delete=models.RESTRICT)
+    enrollment_date = models.DateTimeField(default=current_time)
     status = models.CharField(max_length=9, default='Inactive', choices=STATUS_CHOICES, db_index=True)
 
     class Meta:
         db_table = 'enrollment'
-        unique_together = (('student_id', 'allocation_id'),)
-        ordering = ['enrollment_id', 'student_id', 'allocation_id',]
+        unique_together = (('student', 'allocation'),)
+        ordering = ['enrollment_id', 'student', 'allocation',]
 
     def __str__(self):
-        return f"{self.student_id}--{self.allocation_id}"
+        return f"{self.student.student_id}--{self.allocation.allocation_id}"
 
 
 class Reviews(models.Model):
     review_id = models.AutoField(primary_key=True)
-    enrollment_id = models.ForeignKey('Enrollment', on_delete=models.CASCADE)
+    enrollment = models.ForeignKey('Enrollment', on_delete=models.CASCADE)
     review_text = models.TextField(blank=True, null=True)
     rating = models.DecimalField(max_digits=4, decimal_places=2)
-    create_date = models.DateTimeField(db_column='createdAt', default=datetime.now)
+    create_date = models.DateTimeField(db_column='createdAt', default=current_time)
 
     class Meta:
         db_table = 'reviews'
@@ -279,13 +286,12 @@ class Reviews(models.Model):
             )
         ]
 
-        unique_together = (('review_id', 'enrollment_id'),)
 
 
 
 class Result(models.Model):
     result_id = models.AutoField(primary_key=True)
-    enrollment_id = models.OneToOneField('Enrollment', on_delete=models.CASCADE, db_index=True)
+    enrollment = models.OneToOneField('Enrollment', on_delete=models.CASCADE, db_index=True)
     course_gpa = models.DecimalField(max_digits=4, decimal_places=2, blank=True, null=True)
     obtained_marks = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
 
@@ -301,24 +307,23 @@ class Result(models.Model):
                 name='valid_course_gpa_range'
             )
         ]
-        unique_together = (('enrollment_id', 'result_id'),)
 
     def __str__(self):
-        return f"{self.enrollment_id}"
+        return f"{self.enrollment.enrollment_id}"
 
 
 
 
 class Transcript(models.Model):
     id = models.AutoField(primary_key=True)
-    student_id = models.ForeignKey('Student', on_delete=models.CASCADE, db_index=True)
-    semester_id = models.ForeignKey('Semester', on_delete=models.CASCADE)
+    student = models.ForeignKey('Student', on_delete=models.CASCADE, db_index=True)
+    semester = models.ForeignKey('Semester', on_delete=models.CASCADE)
     total_credits = models.IntegerField()
     semester_gpa = models.DecimalField( max_digits=4, decimal_places=2)
 
     class Meta:
         db_table = 'transcript'
-        unique_together = (('student_id', 'semester_id'),)
+        unique_together = (('student', 'semester'),)
         constraints = [
             CheckConstraint(
                 condition = Q(semester_gpa__gte=0.00) & Q(semester_gpa__lte=4.00),
@@ -377,7 +382,7 @@ class Admin(models.Model):
         ('Widowed', 'Widowed'),
     ]
     employee_id = models.OneToOneField(Person, on_delete=models.RESTRICT, primary_key=True)
-    joining_date = models.DateField(blank=True, default=timezone.now)
+    joining_date = models.DateField(blank=True, default=current_time)
     leaving_date = models.DateField(blank=True, null=True)
     office_location = models.CharField( max_length=100, blank=True, null=True)
     marital_status = models.CharField(choices=MARITAL_STATUS_CHOICES, max_length=10, blank=True, null=True)
@@ -388,7 +393,7 @@ class Admin(models.Model):
         ordering = ['employee_id']
 
     def __str__(self):
-        return self.employee_id_id
+        return self.employee_id.person_id
 
 
 class Faculty(models.Model):
@@ -404,13 +409,13 @@ class Faculty(models.Model):
 
     ]
     employee_id = models.OneToOneField(Person, on_delete=models.RESTRICT, primary_key=True)
-    department_id = models.ForeignKey('Department',  on_delete=models.RESTRICT, db_index=True)
+    department = models.ForeignKey('Department',  on_delete=models.RESTRICT, db_index=True)
     designation = models.CharField(choices=DESIGNATION_CHOICES, max_length=20, db_index=True)
     joining_date = models.DateField(blank=True, default=current_time)
 
     class Meta:
         db_table = 'Faculty'
-        ordering = ['employee_id', 'department_id', 'designation']
+        ordering = ['employee_id', 'department', 'designation']
 
     def __str__(self):
         return self.employee_id.person_id
@@ -431,15 +436,15 @@ class Student(models.Model):
         ('On Probation', 'On Probation'),
     ]
 
-    student_id = models.OneToOneField('Person',  on_delete=models.RESTRICT)
-    program_id = models.ForeignKey('Program',  on_delete=models.RESTRICT)
-    class_id = models.ForeignKey('Class',  on_delete=models.RESTRICT, db_index=True)
+    student_id = models.OneToOneField('Person',  on_delete=models.RESTRICT, primary_key=True)
+    program = models.ForeignKey('Program',  on_delete=models.RESTRICT)
+    student_class = models.ForeignKey('Class',  on_delete=models.RESTRICT, db_index=True)
     admission_date = models.DateField(blank=True, default=current_time)
     status = models.CharField(db_column='status', choices=STATUS_CHOICES, max_length=12, default='Active', db_index=True)
 
     class Meta:
         db_table = 'Student'
-        ordering = ['student_id', 'class_id', 'admission_date']
+        ordering = ['student_id', 'student_class', 'admission_date']
 
     def __str__(self):
         return f'{self.student_id.person_id}'
@@ -468,14 +473,14 @@ class Address(models.Model):
 
 class Qualification(models.Model):
     qualification_id = models.AutoField(primary_key=True)
-    person_id = models.ForeignKey('Person', on_delete=models.CASCADE)
+    person = models.ForeignKey('Person', on_delete=models.CASCADE)
     degree_title = models.CharField(max_length=50)
     education_board = models.CharField(max_length=20, blank=True, null=True)
     institution = models.CharField(max_length=50)
     passing_year = models.TextField(blank=True, null=True)
     total_marks = models.IntegerField(blank=True, null=True)
     obtained_marks = models.IntegerField(blank=True, null=True)
-    is_current = models.IntegerField( blank=True, null=True)
+    is_current = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'qualification'
@@ -484,10 +489,10 @@ class Qualification(models.Model):
 
 class AuditTrail(models.Model):
     audit_id = models.AutoField( primary_key=True)
-    userid = models.ForeignKey('Person', on_delete=models.CASCADE, db_index=True)
-    action_type = models.CharField( max_length=6)
-    entity_name = models.CharField( max_length=50)
-    time_stamp = models.DateTimeField(default=datetime.now, db_index=True)
+    user = models.ForeignKey('Person', on_delete=models.CASCADE, db_index=True)
+    action_type = models.CharField(max_length=10)
+    entity_name = models.CharField(max_length=50)
+    time_stamp = models.DateTimeField(default=current_time, db_index=True)
     ip_address = models.CharField( max_length=45)
     user_agent = models.CharField(max_length=255)
     old_value = models.JSONField(blank=True, null=True)
@@ -523,7 +528,7 @@ class ChangeRequest(models.Model):
 
     # For HOD changes
     department = models.ForeignKey(Department, on_delete=models.CASCADE, null=True, blank=True)
-    new_hod = models.ForeignKey(Faculty, on_delete=models.CASCADE, null=True, blank=True)
+    new_hod = models.ForeignKey(Faculty, on_delete=models.CASCADE, null=True, blank=True, related_name='hod_change_requests')
 
 
     # For Result Calculations

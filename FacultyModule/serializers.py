@@ -57,8 +57,8 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
         model = AssessmentChecked
         fields = [
             'id',
-            'assessment_id',
-            'enrollment_id',
+            'assessment',
+            'enrollment',
             'obtained',
             'student_upload',
             'student_info',
@@ -80,9 +80,9 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if obj:
             return {
-                'image' : request.build_absolute_uri(obj.enrollment_id.student_id.student_id.image.url) if obj.enrollment_id.student_id.student_id.image else None,
-                'student_id' : obj.enrollment_id.student_id.student_id.person_id,
-                'first_name' : obj.enrollment_id.student_id.student_id.first_name,
+                'image' : request.build_absolute_uri(obj.enrollment.student.student_id.image.url) if obj.enrollment.student.student_id.image else None,
+                'student_id' : obj.enrollment.student.student_id.person_id,
+                'first_name' : obj.enrollment.student.student_id.first_name,
                 'last_name' : obj.enrollment_id.student_id.student_id.last_name,
             }
         return None
@@ -102,7 +102,7 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
     def validate_obtained(self, value):
         if self.instance and self.instance.obtained == value:
             return value
-        if self.instance and value and value > self.instance.assessment_id.total_marks:
+        if self.instance and value and value > self.instance.assessment.total_marks:
             raise serializers.ValidationError("Obtained marks exceeds total marks")
 
         return value
@@ -110,10 +110,10 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
 
 class AssessmentHyperlinkedIdentityField(serializers.HyperlinkedIdentityField):
     def get_url(self, obj, view_name, request, format):
-        if obj.allocation_id is None:
+        if obj.allocation is None:
             return None
         kwargs = {
-            'allocation_id': obj.allocation_id.pk,
+            'allocation': obj.allocation.pk,
             'assessment_id': getattr(obj, self.lookup_field)
         }
         return self.reverse(view_name, kwargs=kwargs, request=request, format=format)
@@ -131,13 +131,12 @@ class AssessmentSerializer(serializers.ModelSerializer):
         fields = [
             'urls',
             'assessment_id',
-            'allocation_id',
+            'allocation',
             'assessment_type',
             'assessment_name',
             'assessment_date',
             'weightage',
             'total_marks',
-            'file_upload',
             'student_submission',
             'submission_deadline',
             'assessmentchecked_set'
@@ -150,16 +149,15 @@ class AssessmentSerializer(serializers.ModelSerializer):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Assessment):
             extra_kwargs = {
-                'allocation_id' : {'read_only': True},
-                'assessment_type' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'assessment_name' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'assessment_date' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'weightage' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'total_marks' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'file_upload' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'student_submission' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'submission_deadline' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
-                'assessmentchecked_set' : {'read_only': True} if self.instance.allocation_id.status == 'Completed' else {'read_only': False},
+                'allocation' : {'read_only': True},
+                'assessment_type' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'assessment_name' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'assessment_date' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'weightage' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'total_marks' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'student_submission' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'submission_deadline' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
+                'assessmentchecked_set' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
             }
 
         return extra_kwargs
@@ -194,7 +192,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
         if data['weightage'] < 1:
             errors['weightage'] = 'Weightage cannot be less than 1.'
 
-        all_assessments = Assessment.objects.filter(allocation_id=allocation_id)
+        all_assessments = Assessment.objects.filter(allocation=allocation_id)
         total_weightage = 0
         if all_assessments.exists():
             total_weightage = sum([
@@ -230,42 +228,6 @@ class AssessmentSerializer(serializers.ModelSerializer):
         return value
 
 
-    def validate_file_upload(self, value):
-        instance = getattr(self, 'instance', None)
-        if value is None and (instance is None or instance.file_upload is None):
-            return None
-
-        if instance and value == instance.file_upload:
-            return value
-
-        if value is None and instance and instance.file_upload:
-            return instance.file_upload
-
-        allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
-        allowed_mime_types = [
-            'image/jpeg', 'image/png',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # docx
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # pptx
-            'application/zip',
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # xlsx
-            'text/csv',
-            'application/vnd.google-apps.spreadsheet'  # Google Sheet
-        ]
-
-        ext = value.name.split('.')[-1].lower()  # Get extension
-        mime_type = getattr(value.file, 'content_type', None)
-
-        if ext not in allowed_extensions and mime_type not in allowed_mime_types:
-            raise serializers.ValidationError(
-                "Invalid file type. Allowed formats are: jpeg, png, docx, pptx, zip, pdf, xlsx, csv, google sheet."
-            )
-        max_size = 50 * 1024 * 1024  # 50 MB
-        if value.size > max_size:
-            raise serializers.ValidationError("File size must not exceed 50 MB.")
-
-        return value
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['assessmentchecked_set'].context.update(self.context)
@@ -277,11 +239,11 @@ class AssessmentSerializer(serializers.ModelSerializer):
             self.fields['assessmentchecked_set'].instance = self.instance.assessmentchecked_set.all()
 
     def create(self, validated_data):
-        validated_data['allocation_id'] = CourseAllocation.objects.get(allocation_id=self.context.get('allocation_id'))
+        validated_data['allocation'] = CourseAllocation.objects.get(allocation_id=self.context.get('allocation_id'))
         assessment = Assessment.objects.create(**validated_data)
-        enrollment_set = get_list_or_404(Enrollment, allocation_id=assessment.allocation_id)
+        enrollment_set = get_list_or_404(Enrollment, allocation=assessment.allocation)
         for enrollment in enrollment_set:
-            AssessmentChecked.objects.create(enrollment_id=enrollment, assessment_id=assessment)
+            AssessmentChecked.objects.create(enrollment=enrollment, assessment=assessment)
 
         return assessment
 
@@ -295,7 +257,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
             if assessmentChecked_data and instance.assessmentchecked_set.exists():
                 for each in instance.assessmentchecked_set.all():
                     data = next(
-                        (item for item in assessmentChecked_data if item["enrollment_id"] == each.enrollment_id), None)
+                        (item for item in assessmentChecked_data if item["enrollment"] == each.enrollment), None)
                     if data:
                         each.obtained = data['obtained']
                         each.save()
@@ -314,8 +276,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'attendance_date',
-            'lecture_id',
-            'student_id',
+            'lecture',
+            'enrollment',
             'is_present',
             'student_info'
         ]
@@ -336,32 +298,32 @@ class AttendanceSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if obj:
             return {
-                'image': request.build_absolute_uri(obj.student_id.student_id.image.url) if obj.student_id.student_id.image else None,
-                'student_id': obj.student_id.student_id.person_id,
-                'first_name': obj.student_id.student_id.first_name,
-                'last_name': obj.student_id.student_id.last_name,
+                'image': request.build_absolute_uri(obj.enrollment.student.student_id.image.url) if obj.enrollment.student.student_id.image else None,
+                'student_id': obj.enrollment.student.student_id.person_id,
+                'first_name': obj.enrollment.student.student_id.first_name,
+                'last_name': obj.enrollment.student.student_id.last_name,
             }
 
 
     def validate(self, data):
-        allocation = CourseAllocation.objects.filter(allocation_id=data['lecture_id'].allocation_id.allocation_id).prefetch_related('enrollment_set')
+        allocation = CourseAllocation.objects.filter(allocation_id=data['lecture'].allocation.allocation_id).prefetch_related('enrollment_set')
         if not allocation.exists():
             raise serializers.ValidationError(f'No course allocations available for lecture: {data['lecture_id']}')
 
-        enrolled_students = allocation.first().enrollment_set.values_list('student_id', flat=True)
+        enrolled_students = allocation.first().enrollment_set.values_list('student', flat=True)
 
-        if not allocation.exists() or  data['student_id'].pk not in enrolled_students :
-            raise serializers.ValidationError(f'Student {data["student_id"]} does not exist for course allocation: {allocation}')
+        if not allocation.exists() or  data['student'].pk not in enrolled_students :
+            raise serializers.ValidationError(f'Student {data["student"]} does not exist for course allocation: {allocation}')
 
         return data
 
 
 class LectureHyperlinkedIdentityField(serializers.HyperlinkedIdentityField):
     def get_url(self, obj, view_name, request, format):
-        if obj.allocation_id is None:
+        if obj.allocation is None:
             return None
         kwargs = {
-            'allocation_id': obj.allocation_id.pk,
+            'allocation_id': obj.allocation.pk,
             'lecture_id': getattr(obj, self.lookup_field)
         }
         return self.reverse(view_name, kwargs=kwargs, request=request, format=format)
@@ -379,7 +341,7 @@ class LectureSerializer(serializers.ModelSerializer):
             'urls',
             'lecture_id',
             'lecture_no',
-            'allocation_id',
+            'allocation',
             'starting_time',
             'venue',
             'duration',
@@ -389,7 +351,7 @@ class LectureSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'lecture_id' : {'read_only': True},
             'lecture_no': {'read_only': True},
-            'allocation_id': {'read_only': True},
+            'allocation': {'read_only': True},
         }
 
     def validate_starting_time(self,value):
@@ -412,29 +374,27 @@ class LectureSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        validated_data['allocation_id'] = CourseAllocation.objects.get(allocation_id=self.context.get('allocation_id'))
-        lecture_count = Lecture.objects.filter(allocation_id=validated_data['allocation_id']).count()
+        validated_data['allocation'] = CourseAllocation.objects.get(allocation_id=self.context.get('allocation_id'))
+        lecture_count = Lecture.objects.filter(allocation=validated_data['allocation']).count()
         lecture_no = lecture_count +1
-        lecture_id = f'{validated_data['allocation_id'].allocation_id}-{lecture_no}'
-        validated_data['lecture_id'] = lecture_id
         validated_data['lecture_no'] = lecture_no
 
         print(validated_data)
         attendance_set = {}
 
         if 'attendance_set' in validated_data:
-            attendance_set = validated_data.pop('attendance_set')
+            attendance_set = validated_data.pop('attendance_set', {})
 
         lecture = Lecture.objects.create(**validated_data)
-        enrollment = get_list_or_404(Enrollment, allocation_id=validated_data['allocation_id'])
+        enrollments = get_list_or_404(Enrollment, allocation=validated_data['allocation'])
 
         if attendance_set:
             for each in attendance_set:
-                Attendance.objects.create(attendance_date=lecture.starting_time.date(), lecture_id=lecture, **each)
+                Attendance.objects.create(attendance_date=lecture.starting_time.date(), lecture=lecture, **each)
 
         else:
-            for enrollment in enrollment:
-                Attendance.objects.create(lecture_id=lecture, student_id=enrollment.student_id,)
+            for enrollment in enrollments:
+                Attendance.objects.create(lecture=lecture, enrollment=enrollment)
 
         return lecture
 
@@ -448,7 +408,7 @@ class LectureSerializer(serializers.ModelSerializer):
 
         if attendance_set and instance.attendance_set.exists():
             for each in instance.attendance_set.all():
-                data = next((item for item in attendance_set if item["student_id"] == each.student_id), None)
+                data = next((item for item in attendance_set if item["enrollment"] == each.enrollment), None)
                 if data:
                     for attribute, value in data.items():
                         setattr(each, attribute, value)

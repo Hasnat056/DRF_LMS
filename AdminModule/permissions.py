@@ -35,19 +35,15 @@ class ChangeRequestPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.user.is_authenticated:
             if request.user.is_superuser or request.user.groups.filter(name='Admin').exists():
-                return True
+                return request.method == 'GET' or request.method == 'PUT' or request.method == 'PATCH'
             return False
         return False
     def has_object_permission(self, request, view, obj):
-        if request.user.is_authenticated:
-            if request.user.is_superuser:
-                return True
-            if request.user.groups.filter(name='Admin').exists() and obj.requested_by == request.user:
-                if obj.status == 'Applied':
-                    return request.method == 'GET'
-                else:
-                    return request.method == 'PATCH' or request.method == 'PUT'
-            return False
+        if obj.requested_by == request.user:
+            if obj.status == 'Applied':
+                return request.method == 'GET'
+            else:
+                return request.method == 'PATCH' or request.method == 'PUT'
         return False
 
 class DepartmentPermissions(permissions.BasePermission):
@@ -78,15 +74,15 @@ class AdminCourseAllocationPermissions(permissions.BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
-        if request.user.is_authenticated:
-            if request.user.is_superuser:
+        if request.user.is_superuser:
+            return True
+        if request.user.groups.filter(name='Admin').exists():
+            if obj.status in ['Ongoing', 'Completed',]:
+                return request.method == 'GET'
+            elif obj.status == 'Inactive':
                 return True
-            if request.user.groups.filter(name='Admin').exists():
-                if obj.status in ['Ongoing', 'Completed',]:
-                    return request.method == 'GET'
-                elif obj.status == 'Inactive':
-                    return True
-            return False
+        return False
+
 
 
 class AdminEnrollmentPermissions(permissions.BasePermission):
@@ -104,7 +100,6 @@ class AdminEnrollmentPermissions(permissions.BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
-        if request.user.is_authenticated:
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():

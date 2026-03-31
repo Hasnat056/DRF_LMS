@@ -94,7 +94,7 @@ def cache_faculty_data_task(user_id):
     for each in departments:
         cache_key = f'admin:faculty:department:{each.department_id}'
         cache.delete(cache_key)
-        dept_data = queryset.filter(department_id=each.department_id)
+        dept_data = queryset.filter(department=each.department_id)
         serializer = FacultySerializer(dept_data, context=context,many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
         for key, value in designation_choices:
@@ -136,7 +136,7 @@ def cache_student_data_task(user_id):
     for each in departments:
         cache_key = f'admin:students:department:{each.department_id}'
         cache.delete(cache_key)
-        department_data = queryset.filter(program_id__department_id=each.department_id)
+        department_data = queryset.filter(program__department=each.department_id)
         serializer = StudentSerializer(department_data,context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
         for key, value in status_choices:
@@ -189,7 +189,7 @@ def cache_programs_data_task(user_id):
     for each in departments:
         cache_key = f'admin:programs:department:{each.department_id}'
         cache.delete(cache_key)
-        dept_data = queryset.filter(department_id=each.department_id)
+        dept_data = queryset.filter(department=each.department_id)
         serializer = ProgramSerializer(dept_data,context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
 
@@ -226,7 +226,7 @@ def cache_semester_data_task(user_id):
 
     classes = Class.objects.all()
     for each in classes:
-        class_data = queryset.filter(semesterdetails__class_id=each.class_id).distinct()
+        class_data = queryset.filter(semesterdetails__class_=each.class_id).distinct()
         cache_key = f'admin:semesters:class:{each.class_id}'
         cache.delete(cache_key)
         serializer = SemesterSerializer(class_data,context=context, many=True)
@@ -241,9 +241,9 @@ def cache_courseAllocation_data_task(user_id):
     context = {'request': custom_request}
 
     queryset = CourseAllocation.objects.all()
-    semester_based_queryset = queryset.order_by('semester_id')
+    semester_based_queryset = queryset.order_by('semester')
     semester_distributed_queryset = {
-        semester_id : list(items) for semester_id, items in groupby(semester_based_queryset, key=lambda x : x.semester_id.semester_id)
+        semester_id : list(items) for semester_id, items in groupby(semester_based_queryset, key=lambda x : x.semester.semester_id)
     }
     for key, value in semester_distributed_queryset.items():
         cache_key = f'admin:allocations:semester:{key}'
@@ -251,9 +251,9 @@ def cache_courseAllocation_data_task(user_id):
         serializer = CourseAllocationSerializer(value, context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
 
-    faculty_based_queryset = queryset.order_by('teacher_id')
+    faculty_based_queryset = queryset.order_by('faculty')
     faculty_distributed_queryset = {
-        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.teacher_id)
+        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.faculty)
 
     }
     for key, value in faculty_distributed_queryset.items():
@@ -273,10 +273,10 @@ def cache_enrollment_data_task(user_id):
     context = {'request': custom_request}
 
     queryset = Enrollment.objects.all()
-    student_based_queryset = queryset.order_by('student_id')
+    student_based_queryset = queryset.order_by('student')
 
     student_distributed_data = {
-        student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student_id)
+        student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student)
     }
 
     for key, value in student_distributed_data.items():
@@ -286,10 +286,10 @@ def cache_enrollment_data_task(user_id):
         cache.set(cache_key, serializer.data, timeout=60*10)
 
 
-    faculty_based_queryset = queryset.order_by('allocation_id__teacher_id')
+    faculty_based_queryset = queryset.order_by('allocation__faculty')
     faculty_distributed_data = {
 
-        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation_id.teacher_id)
+        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation.faculty)
     }
 
     for key, value in faculty_distributed_data.items():
@@ -299,6 +299,31 @@ def cache_enrollment_data_task(user_id):
         cache.set(cache_key, serializer.data, timeout=60 *10)
 
     return 'Enrollment data has been cached successfully'
+
+@shared_task
+def cache_semester_enrollment_data_task(semester_id):
+    semester = Semester.objects.get(semester_id=semester_id)
+    class_ = Class.objects.filter(semesterdetails__semester=semester).first()
+    if not class_:
+        return 'Class not found'
+
+    cache_key = f'enrollments:{class_.class_id}:semester:allocations'
+
+    allocations = CourseAllocation.objects.filter(semester=semester).select_related('faculty__employee_id', 'course').all()
+    data = {}
+    for each_allocation in allocations:
+        data[each_allocation.allocation_id] = {'faculty_data':{'faculty_id' : each_allocation.faculty.employee_id.person_id,
+                                               'faculty_name' : each_allocation.faculty.employee_id.first_name + ' ' + each_allocation.faculty.employee_id.last_name},
+                                               'course_data':{'course_code' : each_allocation.course.course_code,
+                                               'course_name' : each_allocation.course.course_name,
+                                               'credit_hours' : each_allocation.course.credit_hours,
+                                                'lab': each_allocation.course.lab,}
+                                               }
+
+    cache.set(cache_key, data,timeout=None)
+
+    return 'Semester allocations data has been cached successfully'
+
 
 
 # Email Sending tasks
@@ -362,8 +387,8 @@ def send_result_calculation_confirmation_mail(request_id):
         message=f"Dear Faculty member,\n"
                 "Your request to calculate the result for the course allocation: \n"
                 f"Course Allocation ID: {request.target_allocation.allocation_id}\n"
-                f"Faculty ID: {request.target_allocation.teacher_id.employee_id.person_id}\n"
-                f"Faculty Name: {request.target_allocation.teacher_id.employee_id.first_name} {request.target_allocation.teacher_id.employee_id.last_name}\n"
+                f"Faculty ID: {request.target_allocation.faculty.employee_id.person_id}\n"
+                f"Faculty Name: {request.target_allocation.faculty.employee_id.first_name} {request.target_allocation.faculty.employee_id.last_name}\n"
                 f"Semester ID: {request.target_allocation.semester_id}\n"
                 f"Session: {request.target_allocation.session}\n"
                 f"has been approved by the admin. Kindly visit your portal to apply changes\n"
@@ -372,7 +397,7 @@ def send_result_calculation_confirmation_mail(request_id):
                 f"Thank you,\n"
                 f"NAMAL UNIVERSITY, MAINWALI",
         from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[request.target_allocation.teacher_id.employee_id.institutional_email],
+        recipient_list=[request.target_allocation.faculty.employee_id.institutional_email],
     )
 
     return 'Emails sent successfully'
@@ -386,9 +411,9 @@ def send_result_calculation_mail(request_id,confirmation_link, recipient_email):
         message=f"Dear Admin,\n"
                 "A result calculation request has been made for the course allocation: \n"
                 f"Course Allocation ID: {allocation.allocation_id}\n"
-                f"Faculty ID: {allocation.teacher_id.employee_id.person_id}\n"
-                f"Faculty Name: {allocation.teacher_id.employee_id.first_name} {allocation.teacher_id.employee_id.last_name}\n"
-                f"Semester ID: {allocation.semester_id}\n"
+                f"Faculty ID: {allocation.faculty.employee_id.person_id}\n"
+                f"Faculty Name: {allocation.faculty.employee_id.first_name} {allocation.faculty.employee_id.last_name}\n"
+                f"Semester ID: {allocation.semester.semester_id}\n"
                 f"Session: {allocation.session}\n"
                 f"To approve this request click the link below:\n"
                 f"Confirmation link : {confirmation_link} \n"

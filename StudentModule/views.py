@@ -1,6 +1,7 @@
 from http.client import responses
 
 from django.core.cache import cache
+from django.db.models.query import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, status
@@ -75,9 +76,9 @@ class StudentDashboardView(
         student_data['first_name'] = student.student_id.first_name
         student_data['last_name'] = student.student_id.last_name
         student_data['institutional_email'] = student.student_id.institutional_email
-        student_data['class'] = f'{student.class_id.program_id.program_id}-{student.class_id.batch_year}'
-        student_data['program'] = student.program_id.program_name
-        student_data['department'] = student.program_id.department_id.department_name
+        student_data['class'] = f'{student.class_.program.program_id}-{student.class_.batch_year}'
+        student_data['program'] = student.program.program_name
+        student_data['department'] = student.program.department.department_name
         student_data['image'] = request.build_absolute_uri(student.student_id.image.url) if student.student_id.image else None
         student_data['total_enrollments'] = student.enrollment_set.count()
         student_data['active_enrollments'] = student.enrollment_set.filter(status='Active').count()
@@ -118,13 +119,13 @@ class StudentEnrollmentsListView(
 ):
     serializer_class = StudentEnrollmentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
-    filterset_fields = ['status', 'allocation_id__course_code']
+    filterset_fields = ['status', 'allocation__course__course_code']
 
     def get_queryset(self):
-        queryset = Enrollment.objects.filter(student_id__student_id__user=self.request.user).filter(allocation_id__semester_id__status__in=['Active','Completed'])
-        if queryset.exists():
-            return queryset
-        return Enrollment.objects.none()
+        return Enrollment.objects.filter(
+            student__student_id__user=self.request.user,
+            allocation__semester__status__in=['Active', 'Completed']
+        )
 
 
 class StudentEnrollmentRetrieveView(
@@ -134,10 +135,8 @@ class StudentEnrollmentRetrieveView(
     serializer_class = StudentEnrollmentSerializer
     lookup_field = 'enrollment_id'
     def get_queryset(self):
-        queryset = Enrollment.objects.filter(student_id__student_id__user=self.request.user)
-        if queryset.exists():
-            return queryset
-        return Enrollment.objects.none()
+        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+
 
 
 
@@ -156,10 +155,8 @@ class StudentAttendanceListAPIView(
 
     serializer_class = StudentAttendanceSerializer
     def get_queryset(self):
-        queryset = Enrollment.objects.filter(student_id__student_id__user=self.request.user)
-        if queryset.exists():
-            return queryset
-        return Enrollment.objects.none()
+        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+
 
 
 class StudentAttendanceRetrieveAPIView(
@@ -168,23 +165,29 @@ class StudentAttendanceRetrieveAPIView(
     serializer_class = StudentAttendanceSerializer
     lookup_field = 'enrollment_id'
     def get_queryset(self):
-        queryset = Enrollment.objects.filter(student_id__student_id__user=self.request.user)
-        if queryset.exists():
-            return queryset
-        return Enrollment.objects.none()
+        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+
 
 class StudentEnrollmentCreateAPIView(
     StudentEnrollmentCreatePermissionMixin,
     APIView
 ):
     def get(self,request):
-        student = Student.objects.get(student_id__user=self.request.user)
+        student = request.student
+        student_cache_key = f'enrollments:{student.student_id}:{student.class_id}:data'
+        student_data = cache.get(student_cache_key)
+        if student_data:
+            return Response(data=student_data, status=status.HTTP_200_OK)
 
-        semester = Semester.objects.filter(semesterdetails__class_id=student.class_id, status='Inactive',
-                                           session__isnull=False, activation_deadline__isnull=False).prefetch_related('courseallocation_set').first()
+        cache_key = f'enrollments:{student.class_id}:semester:allocations'
+        allocation_data = cache.get(cache_key)
+        enrolled_allocations = Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True)
+        for key, value in enrolled_allocations:
+            value['confirm'] = key in enrolled_allocations
 
-        serializer = StudentEnrollmentCreateSerializerA(semester.courseallocation_set.all(), many=True, context={'request': request})
-        return Response(data=serializer.data, status=status.HTTP_200_OK)
+        cache.set(student_cache_key, allocation_data, None)
+
+        return Response(data=allocation_data, status=status.HTTP_200_OK)
 
     def post(self, request):
         count = 0
@@ -206,7 +209,7 @@ class ReviewListAPIView(
 
     def get_queryset(self):
         student_id = self.kwargs.get('student_id')
-        queryset = Reviews.objects.filter(enrollment_id__student_id__student_id=student_id)
+        queryset = Reviews.objects.filter(enrollment__student__student_id=student_id)
         return queryset
 
 
@@ -218,7 +221,7 @@ class ReviewCreateAPIView(
 
     def get_queryset(self):
         enrollment_id = self.kwargs.get('enrollment_id')
-        queryset = Reviews.objects.filter(enrollment_id=enrollment_id)
+        queryset = Reviews.objects.filter(enrollment=enrollment_id)
         return queryset
 
     def get_serializer_context(self):
@@ -237,7 +240,7 @@ class ReviewRetrieveUpdateDestroyAPIView(
     lookup_field = 'review_id'
     def get_queryset(self):
         enrollment_id = self.kwargs['enrollment_id']
-        queryset = Reviews.objects.filter(enrollment_id=enrollment_id)
+        queryset = Reviews.objects.filter(enrollment=enrollment_id)
         return queryset
 
 

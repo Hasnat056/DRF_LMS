@@ -112,7 +112,7 @@ class FacultyProfileView(
         cached_data = cache.get(cache_key)
 
         # In production → skip DB query on cache hit
-        if not settings.DEBUG and cached_data is not None:
+        if cached_data is not None:
             return Response(cached_data, status=status.HTTP_200_OK)
 
         faculty = Faculty.objects.filter(employee_id__user=request.user).first()
@@ -149,7 +149,7 @@ class FacultyCourseAllocationView(
 
     serializer_class = get_faculty_allocation_serializer()
     def get_queryset(self):
-        queryset = CourseAllocation.objects.filter(teacher_id__employee_id__user=self.request.user, status__in=['Ongoing', 'Completed'])
+        queryset = CourseAllocation.objects.filter(faculty__employee_id__user=self.request.user, status__in=['Ongoing', 'Completed'])
         if queryset.exists():
                 return queryset
         return CourseAllocation.objects.none()
@@ -184,9 +184,9 @@ class FacultyCourseAllocationView(
 
 
     filter_backends = [DjangoFilterBackend,SearchFilter]
-    filterset_fields = [ 'status', 'course_code', 'semester_id']
-    search_fields = [ 'enrollment__student_id__student_id__first_name',
-                     'course_code__course_code', ]
+    filterset_fields = [ 'status', 'course', 'semester']
+    search_fields = [ 'enrollment__student__student_id__first_name',
+                     'course__course_code', ]
 
 
 class FacultyCourseAllocationRetrieveView(
@@ -216,7 +216,7 @@ class AssessmentListCreateAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Assessment.objects.filter(allocation_id=allocation_id)
+        queryset = Assessment.objects.filter(allocation=allocation_id)
         return queryset
 
     def get_serializer_context(self):
@@ -281,7 +281,7 @@ class AssessmentRetrieveUpdateDestroyAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Assessment.objects.filter(allocation_id=allocation_id)
+        queryset = Assessment.objects.filter(allocation=allocation_id)
         return queryset
 
 
@@ -301,7 +301,7 @@ class LectureListCreateAPIView(
     serializer_class = LectureSerializer
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Lecture.objects.filter(allocation_id=allocation_id)
+        queryset = Lecture.objects.filter(allocation=allocation_id)
         return queryset
 
     def get_serializer_context(self):
@@ -320,7 +320,7 @@ class LectureRetrieveUpdateDestroyAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Lecture.objects.filter(allocation_id=allocation_id)
+        queryset = Lecture.objects.filter(allocation=allocation_id)
         return queryset
 
 
@@ -333,7 +333,7 @@ class ResultCalculationRequest(
         if self.request.user.groups.filter(name='Faculty').exists():
             allocation_id = self.kwargs.get('allocation_id')
             allocation = CourseAllocation.objects.get(allocation_id=allocation_id)
-            if not allocation.teacher_id.employee_id.user == self.request.user:
+            if not allocation.faculty.employee_id.user == self.request.user:
                 return Response(data={'message':'You are not allowed to perform this action'},status=status.HTTP_403_FORBIDDEN)
 
             queryset = ChangeRequest.objects.filter(target_allocation=allocation)

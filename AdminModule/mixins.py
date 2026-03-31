@@ -16,9 +16,9 @@ class PersonSerializerMixin:
     def create_mixin(self, validated_data, model):
         person_data = {}
         if model == 'Student':
-            person_data = validated_data.pop('student_id')
+            person_data = validated_data.pop('student_id', {})
         if model in ['Faculty', 'Admin']:
-            person_data = validated_data.pop('employee_id')
+            person_data = validated_data.pop('employee_id', {})
 
 
         user_data = person_data.pop('user', {})
@@ -35,7 +35,7 @@ class PersonSerializerMixin:
 
         if person_data and model_data:
             if model == 'Faculty':
-                count = Faculty.objects.filter(department_id=model_data['department_id']).count()
+                count = Faculty.objects.filter(department=model_data['department']).count()
                 person_id = f'NUM-{model_data["department_id"]}-{str(timezone.now().year)}-{str(count+1)}'
                 person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Faculty', user=user)
@@ -44,8 +44,8 @@ class PersonSerializerMixin:
                 user.groups.add(group)
                 instance = faculty
             elif model == 'Student':
-                count = Student.objects.filter(program_id=model_data['program_id'], admission_date=timezone.now().year).count()
-                person_id = f'NUM-{model_data['program_id']}-{str(timezone.now().year)}-{str(count+1)}'
+                count = Student.objects.filter(program=model_data['program'], admission_date=timezone.now().year).count()
+                person_id = f'NUM-{model_data['program']}-{str(timezone.now().year)}-{str(count+1)}'
                 person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Student', user=user)
                 student = Student.objects.create(**model_data, student_id=person)
@@ -65,7 +65,7 @@ class PersonSerializerMixin:
         if qualification_data:
             if qualification_data:
                 for each in qualification_data:
-                    Qualification.objects.create(person_id=person, **each)
+                    Qualification.objects.create(person=person, **each)
 
         return instance
 
@@ -116,7 +116,7 @@ class PersonSerializerMixin:
             if hasattr(person, 'qualification_set'):
                 person.qualification_set.all().delete()
             for each in qualification_data:
-                qualification = Qualification.objects.create(person_id=person, **each)
+                qualification = Qualification.objects.create(person=person, **each)
                 print(qualification)
 
         return instance
@@ -163,7 +163,7 @@ class PersonSerializerMixin:
 
 class ResultCalculationMixin:
     def calculate_gpa(self, data):
-        results = Result.objects.filter(enrollment_id__in=data.keys())
+        results = Result.objects.filter(enrollment__in=data.keys())
         values = list(data.values())
         final_result_data = {}
         if len(values) < 20:
@@ -189,8 +189,8 @@ class ResultCalculationMixin:
                 else:
                     course_gpa = 0.0
 
-                final_result_data[enrollment.student_id] = {'obtained': obtained, 'course_gpa': course_gpa}
-                student_result = results.get(enrollment_id=enrollment)
+                final_result_data[enrollment.student.student_id] = {'obtained': obtained, 'course_gpa': course_gpa}
+                student_result = results.get(enrollment=enrollment)
                 student_result.obtained_marks = obtained
                 student_result.course_gpa = course_gpa
                 student_result.save()
@@ -227,8 +227,8 @@ class ResultCalculationMixin:
             else:
                 course_gpa = 0.0
 
-            final_result_data[enrollment.student_id] = {'obtained': obtained, 'score': score, 'course_gpa': course_gpa}
-            student_result = results.get(enrollment_id=enrollment)
+            final_result_data[enrollment.student.student_id] = {'obtained': obtained, 'score': score, 'course_gpa': course_gpa}
+            student_result = results.get(enrollment=enrollment)
             student_result.obtained_marks = obtained
             student_result.course_gpa = course_gpa
             student_result.save()
@@ -238,13 +238,13 @@ class ResultCalculationMixin:
     def calculate_result(self, instance):
         results = {}
         if isinstance(instance, CourseAllocation):
-            enrollments = Enrollment.objects.filter(allocation_id=instance).prefetch_related('assessmentchecked_set')
+            enrollments = Enrollment.objects.filter(allocation=instance).prefetch_related('assessmentchecked_set')
             for each_enrollment in list(enrollments):
                 if each_enrollment.assessmentchecked_set.exists():
                     student_result = Decimal('0.00')
                     for each_assessment in each_enrollment.assessmentchecked_set.all():
                         student_result += ((
-                                                       each_assessment.obtained / each_assessment.assessment_id.total_marks) * each_assessment.assessment_id.weightage)
+                                                       each_assessment.obtained / each_assessment.assessment.total_marks) * each_assessment.assessment.weightage)
 
                     results[each_enrollment] = student_result
                     each_enrollment.status = 'Completed'

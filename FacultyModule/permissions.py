@@ -27,7 +27,7 @@ class FacultyCourseAllocationPermissions(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_authenticated:
             if request.user.groups.filter(name='Faculty').exists():
-                return obj.teacher_id.employee_id.user == request.user
+                return obj.faculty.employee_id.user == request.user
             return False
         return False
 
@@ -47,7 +47,7 @@ class AssessmentPermissions(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_authenticated:
             if request.user.groups.filter(name='Faculty').exists():
-                return request.user == obj.allocation_id.teacher_id.employee_id.user
+                return request.user == obj.allocation.faculty.employee_id.user
             return True
         return False
 
@@ -76,6 +76,6 @@ class FacultyLecturePermissions(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_authenticated:
             if request.user.groups.filter(name='Faculty').exists():
-                return obj.allocation_id.teacher_id.employee_id.user == request.user
+                return obj.allocation.faculty.employee_id.user == request.user
             return False
         return False

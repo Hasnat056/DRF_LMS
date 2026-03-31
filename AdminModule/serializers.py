@@ -168,7 +168,7 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
         fields = [
             'url',
             'person',
-            'department_id',
+            'department',
             'designation',
             'joining_date',
             'courseallocation_set',
@@ -178,7 +178,7 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Faculty):
             if self.context.get('request').user.groups.filter(name='Faculty').exists():
-                extra_kwargs['department_id'] = {'read_only': True}
+                extra_kwargs['department'] = {'read_only': True}
                 extra_kwargs['designation'] = {'read_only': True}
                 extra_kwargs['joining_date'] = {'read_only': True}
         return extra_kwargs
@@ -190,8 +190,9 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
         person = fields['person']
         if self.context.get('request') == 'PUT' or self.context.get('request') == 'PATCH' or isinstance(self.instance, Faculty):
             person.fields['user'].read_only = True
-        if isinstance(self.instance,Faculty) and self.context.get('request').user.groups.filter(name='Faculty').exists():
 
+
+        if isinstance(self.instance,Faculty) and self.context.get('request').user.groups.filter(name='Faculty').exists():
             person.fields['person_id'].read_only = True
             person.fields['first_name'].read_only = True
             person.fields['last_name'].read_only = True
@@ -249,8 +250,8 @@ class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
         fields = [
             'url',
             'person',
-            'program_id',
-            'class_id',
+            'program',
+            'student_class',
             'admission_date',
             'status',
             'enrollment_set',
@@ -267,7 +268,7 @@ class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
         if self.instance and self.instance.admission_date == value:
             return value
 
-        if value and value.year < datetime.today().year or value.year > datetime.today().year:
+        if value and (value.year < datetime.today().year or value.year > datetime.today().year):
             raise serializers.ValidationError("Invalid admission date")
         return value
 
@@ -287,8 +288,8 @@ class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Student) and self.context.get('request').user.groups.filter(name='Student').exists():
-            extra_kwargs['program_id'] = {'read_only': True}
-            extra_kwargs['class_id'] = {'read_only' : True}
+            extra_kwargs['program'] = {'read_only': True}
+            extra_kwargs['student_class'] = {'read_only' : True}
             extra_kwargs['admission_date'] = {'read_only': True}
             extra_kwargs['status'] = {'read_only': True}
         return extra_kwargs
@@ -394,7 +395,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         faculty = Faculty.objects.get(employee_id=validated_data['HOD'])
-        if instance.HOD == faculty:
+        if instance.HOD and instance.HOD == faculty:
             return instance
 
         request = ChangeRequest.objects.create(department=instance, new_hod=faculty,
@@ -464,15 +465,16 @@ class SemesterDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = SemesterDetails
         fields = [
-            'course_code',
+            'course',
             'course_name',
-            'class_id',
-            'semester_id'
+            'student_class',
+            'semester'
         ]
     def get_course_name(self, obj) -> str:
-        if obj.course_code:
-            return obj.course_code.course_name
-        return None
+        if obj.course:
+            return obj.course.course_name
+        return 'None'
+
 
 class SemesterClassSerializer(serializers.ModelSerializer):
 
@@ -511,8 +513,8 @@ class SchemeOfStudiesField(serializers.Field):
         return obj
 
     def to_representation(self, obj):
-        semester_list = Semester.objects.filter(semesterdetails__class_id=obj.class_id).distinct().prefetch_related(
-            'semesterdetails_set__course_code'
+        semester_list = Semester.objects.filter(semesterdetails__class_=obj.class_).distinct().prefetch_related(
+            'semesterdetails_set__course'
         )
         semester_serializer_list = []
         for each in semester_list:
@@ -539,7 +541,7 @@ class ClassSerializer(serializers.ModelSerializer):
         fields = [
             'urls',
             'class_id',
-            'program_id',
+            'program',
             'batch_year',
             'scheme_of_studies',
         ]
@@ -550,7 +552,7 @@ class ClassSerializer(serializers.ModelSerializer):
         if 'scheme_of_studies' in validated_data:
             validated_data.pop('scheme_of_studies')
         new_class = Class.objects.create(**validated_data)
-        numbers_of_semesters = Program.objects.filter(program_id=new_class.program_id).first().total_semesters
+        numbers_of_semesters = Program.objects.filter(program_id=new_class.program.program_id).first().total_semesters
 
         created_semesters_list = []
         for i in range(numbers_of_semesters):
@@ -559,7 +561,7 @@ class ClassSerializer(serializers.ModelSerializer):
 
         initial_semesterdetails_list = []
         for each in created_semesters_list:
-            semester_detail = SemesterDetails.objects.create(semester_id=each, class_id=new_class)
+            semester_detail = SemesterDetails.objects.create(semester_id=each, class_=new_class)
             initial_semesterdetails_list.append(semester_detail)
 
         return new_class
@@ -587,7 +589,7 @@ class ClassSerializer(serializers.ModelSerializer):
                 semester_detail_set = each_semester.pop('semesterdetails_set')
                 if len(semester_detail_set) > 1 or (
                         len(semester_detail_set) == 1 and semester_detail_set[0]['course_code'] is not None):
-                    SemesterDetails.objects.filter(semester_id=semester).delete()
+                    SemesterDetails.objects.filter(semester=semester).delete()
                 course_codes = [each['course_code'] for each in semester_detail_set if each['course_code'] is not None]
 
 
@@ -596,7 +598,7 @@ class ClassSerializer(serializers.ModelSerializer):
                     loaded_course_codes = {each.course_code: each for each in course_queryset}
                     for each in semester_detail_set:
                         course = loaded_course_codes[each['course_code']]
-                        SemesterDetails.objects.create(course_code=course, class_id=instance, semester_id=semester)
+                        SemesterDetails.objects.create(course=course, student_class=instance, semester=semester)
 
                 if 'session' in each_semester:
                     semester.session = each_semester['session']
@@ -621,9 +623,9 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         fields = [
             'urls',
             'enrollment_id',
-            'student_id',
+            'student',
             'student_info',
-            'allocation_id',
+            'allocation',
             'enrollment_date',
             'status',
             'result',
@@ -640,9 +642,9 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         )
     )
     def get_student_info(self, obj):
-        if obj and hasattr(obj, 'student_id'):
-            return {'student_id': obj.student_id.student_id.person_id,
-                'name': obj.student_id.student_id.first_name + ' ' + obj.student_id.student_id.last_name}
+        if obj and hasattr(obj, 'student'):
+            return {'student_id': obj.student.student_id.person_id,
+                'name': obj.student.student_id.first_name + ' ' + obj.student.student_id.last_name}
         else:
             return None
 
@@ -668,15 +670,15 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
 
         if not self.context.get('request'):
-            fields['allocation_id'].queryset = CourseAllocation.objects.none()
+            fields['allocation'].queryset = CourseAllocation.objects.none()
             return fields
 
 
         queryset = CourseAllocation.objects.filter(status='Ongoing')
         if queryset.exists():
-            fields['allocation_id'].queryset = queryset
+            fields['allocation'].queryset = queryset
         else:
-            fields['allocation_id'].queryset = CourseAllocation.objects.none()
+            fields['allocation'].queryset = CourseAllocation.objects.none()
 
 
         request = self.context.get("request")
@@ -688,12 +690,12 @@ class EnrollmentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
 
         enrollment = Enrollment.objects.create(**validated_data)
-        Result.objects.create(enrollment_id=enrollment)
+        Result.objects.create(enrollment=enrollment)
 
-        assessments = Assessment.objects.filter(allocation_id=enrollment.allocation_id)
+        assessments = Assessment.objects.filter(allocation=enrollment.allocation)
         if assessments.exists():
             for each in assessments:
-                AssessmentChecked.objects.create(enrollment_id=enrollment, assessment_id=each)
+                AssessmentChecked.objects.create(enrollment=enrollment, assessment=each)
 
         return enrollment
 
@@ -713,12 +715,11 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
         fields = [
             'urls',
             'allocation_id',
-            'teacher_id',
-            'course_code',
-            'semester_id',
+            'faculty',
+            'course',
+            'semester',
             'session',
             'status',
-            'file_upload',
             'assessment_set',
             'enrollment_set',
             'lecture_set',
@@ -729,14 +730,14 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
         fields = super().get_fields()
 
         if not self.context.get('request'):
-            fields['semester_id'].queryset = Semester.objects.none()
+            fields['semester'].queryset = Semester.objects.none()
             return fields
 
         queryset = Semester.objects.filter(status='Inactive',session__isnull=False, activation_deadline__isnull=False)
         if queryset.exists():
-            fields['semester_id'].queryset = queryset
+            fields['semester'].queryset = queryset
         else:
-            fields['semester_id'].queryset = Semester.objects.none()
+            fields['semester'].queryset = Semester.objects.none()
 
         return fields
 
@@ -745,57 +746,19 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
         request = self.context.get("request")
         if request and (request.method == 'PUT' or request.method == 'PATCH') and request.user.groups.filter(name="Faculty").exists() and isinstance(self.instance, CourseAllocation):
             extra_kwargs = {
-                'teacher_id':{'read_only': True},
-                'course_code':{'read_only': True},
-                'semester_id':{'read_only': True},
+                'faculty':{'read_only': True},
+                'course':{'read_only': True},
+                'semester':{'read_only': True},
                 'status':{'read_only': True},
                 'session':{'read_only': True},
-                'file_upload':{'read_only': True} if self.instance.status == 'Completed' else {'read_only': False},
             }
         if request and request.user.groups.filter(name="Admin").exists():
             extra_kwargs = {
-                'file_upload':{'read_only': True},
                 'session' : {'read_only': True},
                 'status' : {'read_only': True},
             }
 
         return extra_kwargs
-
-    def validate_file_upload(self, value):
-        instance = getattr(self, 'instance', None)
-        if value is None and (instance is None or instance.file_upload is None):
-            return None
-
-        if instance and value == instance.file_upload:
-            return value
-
-        if value is None and instance and instance.file_upload:
-            return instance.file_upload
-
-        allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
-        allowed_mime_types = [
-            'image/jpeg', 'image/png',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # docx
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # pptx
-            'application/zip',
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # xlsx
-            'text/csv',
-            'application/vnd.google-apps.spreadsheet'  # Google Sheet
-        ]
-
-        ext = value.name.split('.')[-1].lower()  # Get extension
-        mime_type = getattr(value.file, 'content_type', None)
-
-        if ext not in allowed_extensions and mime_type not in allowed_mime_types:
-            raise serializers.ValidationError(
-                "Invalid file type. Allowed formats are: jpeg, png, docx, pptx, zip, pdf, xlsx, csv, google sheet."
-            )
-        max_size = 50 * 1024 * 1024  # 50 MB
-        if value.size > max_size:
-            raise serializers.ValidationError("File size must not exceed 50 MB.")
-
-        return value
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -808,11 +771,11 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
 
 
     def create(self, validated_data):
-        semester = validated_data['semester_id']
+        semester = validated_data['semester']
 
         validated_data['session'] = semester.session
-        course = validated_data['course_code']
-        allowed_courses = Course.objects.filter(semesterdetails__semester_id=semester.semester_id)
+        course = validated_data['course']
+        allowed_courses = Course.objects.filter(semesterdetails__semester=semester.semester_id)
         if not allowed_courses.exists():
             raise serializers.ValidationError(f"Semester: {semester} has no available courses")
         if course not in allowed_courses.all():
@@ -820,9 +783,6 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
            
                                                f"{", ".join(each.course_code for each in allowed_courses)}\n")
 
-        already_allocation = semester.courseallocation_set.all().filter(course_code=course, teacher_id=validated_data['teacher_id'], semester_id=semester)
-        if already_allocation.exists():
-            raise serializers.ValidationError(f"Course allocation with these details already exist")
         allocation = CourseAllocation.objects.create(**validated_data)
 
         return allocation
@@ -834,8 +794,8 @@ class TranscriptSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transcript
         fields = [
-            'student_id',
-            'semester_id',
+            'student',
+            'semester',
             'total_credits',
             'semester_gpa'
         ]
@@ -845,14 +805,14 @@ class TranscriptSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        transcript = Transcript.objects.get(semester_id=data['semester_id'], student_id=data['student_id'])
+        transcript = Transcript.objects.get(semester=data['semester'], student=data['student'])
         if transcript:
             raise serializers.ValidationError('Transcript already exists')
         return data
 
     def create(self, validated_data):
-        student = Student.objects.get(student_id=validated_data['student_id'])
-        semester = Semester.objects.get(semester_id=validated_data['semester_id'])
+        student = Student.objects.get(student_id=validated_data['student'])
+        semester = Semester.objects.get(semester_id=validated_data['semester'])
 
         if not student:
             raise serializers.ValidationError('Student not found')
@@ -862,14 +822,14 @@ class TranscriptSerializer(serializers.ModelSerializer):
 
         semester_gpa = 0.00
         total_credits_attempted = 0.0
-        enrollments = Enrollment.objects.filter(student_id=student, allocation_id__semester_id=semester).prefetch_related('result')
+        enrollments = Enrollment.objects.filter(student=student, allocation__semester=semester).prefetch_related('result')
         if enrollments.exists() and [each.status=='Completed' for each in enrollments]:
             for each in enrollments:
-                semester_gpa += each.result.course_gpa * each.allocation_id.course_code.credit_hours
-                total_credits_attempted += each.allocation_id.course_code.credit_hours
+                semester_gpa += each.result.course_gpa * each.allocation.course.credit_hours
+                total_credits_attempted += each.allocation.course.credit_hours
 
             semester_gpa = semester_gpa/total_credits_attempted
-            transcript = Transcript.objects.create(semester_id=semester, student_id=student, semester_gpa=semester_gpa, total_credits_attempted=total_credits_attempted)
+            transcript = Transcript.objects.create(semester=semester, student=student, semester_gpa=semester_gpa, total_credits_attempted=total_credits_attempted)
             return transcript
         return None
 
@@ -905,9 +865,9 @@ class BulkTranscriptSerializer(serializers.Serializer):
             raise serializers.ValidationError('Transcripts already exists')
 
 
-        student_list = Student.objects.filter(enrollment__allocation_id__semester_id=semester).prefetch_related(
+        student_list = Student.objects.filter(enrollment__allocation__semester=semester).prefetch_related(
             Prefetch(
-                'enrollment_set',queryset=Enrollment.objects.filter(allocation_id__semester_id=semester)
+                'enrollment_set',queryset=Enrollment.objects.filter(allocation__semester=semester)
                      .prefetch_related('result'))
         )
 
@@ -915,7 +875,7 @@ class BulkTranscriptSerializer(serializers.Serializer):
         errors = {}
         for student in student_list:
             for enrollment in student.enrollment_set.all():
-                if not enrollment.result or not enrollment.result.course_gpa:
+                if not hasattr(enrollment, 'result') or not enrollment.result or not enrollment.result.course_gpa:
                     errors[f'{student.student_id.person_id}'] = f'Result does not exist for enrollment {enrollment.enrollment_id}'
 
         if errors:
@@ -928,8 +888,8 @@ class BulkTranscriptSerializer(serializers.Serializer):
             total_credits_attempted = Decimal('0.0')
 
             if each_student.enrollment_set.exists() and all([e.status == 'Completed' for e in each_student.enrollment_set.all()]):
-                gpa += sum([e.result.course_gpa*e.allocation_id.course_code.credit_hours for e in each_student.enrollment_set.all()])
-                total_credits_attempted += sum([e.allocation_id.course_code.credit_hours for e in each_student.enrollment_set.all()])
+                gpa += sum([e.result.course_gpa*e.allocation.course.credit_hours for e in each_student.enrollment_set.all()])
+                total_credits_attempted += sum([e.allocation.course.credit_hours for e in each_student.enrollment_set.all()])
 
             if total_credits_attempted == 0:
                 raise serializers.ValidationError('Total credits are zero, GPA cannot be calculated')
@@ -937,8 +897,8 @@ class BulkTranscriptSerializer(serializers.Serializer):
 
             data.append(
                 Transcript(
-                    student_id=each_student,
-                    semester_id=semester,
+                    student=each_student,
+                    semester=semester,
                     total_credits=total_credits_attempted,
                     semester_gpa=gpa
                 )
@@ -1105,16 +1065,16 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         #parsing faculty data if present
         if 'designation' in row:
             parsed_row['designation'] = row['designation']
-        if 'department_id' in row:
-            parsed_row['department_id'] = row['department_id']
+        if 'department' in row:
+            parsed_row['department'] = row['department']
             if 'joining_date' in row and row['joining_date'] != '':
                 parsed_row['joining_date'] = row['joining_date']
 
         #parsing student_data if present
-        if 'program_id' in row:
-            parsed_row['program_id'] = row['program_id']
-        if 'class_id' in row:
-            parsed_row['class_id'] = row['class_id']
+        if 'program' in row:
+            parsed_row['program'] = row['program']
+        if 'class_' in row:
+            parsed_row['student_class'] = row['student_class']
         if 'admission_date' in row and row['admission_date'] != '':
             parsed_row['admission_date'] = row['admission_date']
 
@@ -1188,15 +1148,15 @@ class SemesterSerializer(serializers.ModelSerializer):
     def validate_activation_deadline(self, value):
         if value < timezone.now():
             raise serializers.ValidationError('Activation deadline cannot be is the past')
-        #if timezone.now() < value < timezone.now() + timedelta(days=7):
-            #raise serializers.ValidationError('Set activation deadline at least a week ahead')
+        if timezone.now() < value < timezone.now() + timedelta(minutes=7):
+            raise serializers.ValidationError('Set activation deadline at least a week ahead')
         return value
 
     def validate_closing_deadline(self, value):
         if value < timezone.now():
             raise serializers.ValidationError('Closing deadline cannot be is the past')
-        #if timezone.now() < value < timezone.now() + timedelta(days=7):
-            #raise serializers.ValidationError('Set closing deadline at least a week ahead')
+        if timezone.now() < value < timezone.now() + timedelta(minutes=7):
+            raise serializers.ValidationError('Set closing deadline at least a week ahead')
         return value
 
     @extend_schema_field(OpenApiTypes.URI)
@@ -1207,10 +1167,10 @@ class SemesterSerializer(serializers.ModelSerializer):
         )
 
     def get_associated_class(self, obj) -> str:
-        linked_class = Class.objects.filter(semesterdetails__semester_id=obj.semester_id).distinct()
+        linked_class = Class.objects.filter(semesterdetails__semester=obj.semester_id).distinct()
         if linked_class.exists():
             return str(linked_class.first())
-        return None
+        return 'None'
 
 
 
@@ -1228,11 +1188,24 @@ class SemesterSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         cache_key = f'semester:activation:{instance.semester_id}'
         if 'activation_deadline' in validated_data:
-            associated_class = Class.objects.filter(semesterdetails__semester_id=instance.semester_id).first()
+            associated_class = Class.objects.filter(semesterdetails__semester=instance.semester_id).first()
             if associated_class:
-                active_semester = Semester.objects.filter(semesterdetails__class_id=associated_class, status='Active').first()
-                if active_semester:
-                    raise serializers.ValidationError(f"The Class: {associated_class} has already has an active semester going : {active_semester}")
+               conflicting_semester = (Semester.objects.filter(semesterdetails__student_class=associated_class, activation_deadline__isnull=False).exclude(
+                   semester_id=instance.semester_id
+               ).exclude(
+                   status='Completed'
+               ).first())
+
+               if conflicting_semester:
+                    if conflicting_semester.status == 'Completed':
+                        raise serializers.ValidationError(
+                            f"Class: {associated_class} already has an active semester: {conflicting_semester}."
+                        )
+                    if conflicting_semester.status == 'Inactive':
+                        raise serializers.ValidationError(
+                            f"Class: {associated_class} already has a semester scheduled for activation: {conflicting_semester}. Cancel it first."
+                        )
+
 
 
 
@@ -1245,9 +1218,13 @@ class SemesterSerializer(serializers.ModelSerializer):
                 app.control.revoke(old_task_id, terminate=True)
                 cache.delete(cache_key)
 
-            from .tasks import semester_activation_task
+            if validated_data['activation_deadline'] is None:
+                return instance
+
+            from .tasks import semester_activation_task, cache_semester_enrollment_data_task
             task = semester_activation_task.apply_async(args=[instance.semester_id], eta=instance.activation_deadline)
             cache.set(cache_key, task.id, timeout=None)
+            allocation_cache = cache_semester_enrollment_data_task.delay(instance.semester_id)
 
             return instance
 

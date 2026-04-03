@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NexusAPI — Academic Management System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07070e;--surface:#0f0f1a;--surface2:#161625;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
+  --text:#eeedf5;--muted:#7a7990;
+  --accent:#7c6fff;--accent2:#00e5b0;--accent3:#ff6b8a;--amber:#ffb347;
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--display:'Syne',sans-serif;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-weight:300;line-height:1.7;overflow-x:hidden}
+#particles{position:fixed;inset:0;z-index:0;pointer-events:none}
+.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(124,111,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(124,111,255,0.025) 1px,transparent 1px);background-size:70px 70px}
+.orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.orb-1{width:700px;height:700px;top:-250px;left:-200px;background:radial-gradient(circle,rgba(124,111,255,0.07) 0%,transparent 70%)}
+.orb-2{width:600px;height:600px;bottom:-150px;right:-150px;background:radial-gradient(circle,rgba(0,229,176,0.05) 0%,transparent 70%)}
+.orb-3{width:400px;height:400px;top:50%;left:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(255,107,138,0.03) 0%,transparent 70%)}
+
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+.reveal-left{opacity:0;transform:translateX(-40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal-left.visible{opacity:1;transform:translateX(0)}
+.reveal-right{opacity:0;transform:translateX(40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal-right.visible{opacity:1;transform:translateX(0)}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1.1rem 4rem;background:rgba(7,7,14,0.8);backdrop-filter:blur(24px);border-bottom:1px solid var(--border)}
+.nav-logo{font-family:var(--display);font-weight:800;font-size:1.1rem;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.nav-logo span{color:var(--accent)}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:0.84rem;color:var(--muted);text-decoration:none;font-weight:400;transition:color 0.2s;letter-spacing:0.02em}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{font-size:0.82rem!important;color:var(--accent)!important;border:1px solid rgba(124,111,255,0.3);padding:0.4rem 1rem;border-radius:6px;transition:background 0.2s!important}
+.nav-cta:hover{background:rgba(124,111,255,0.1)!important;color:var(--text)!important}
+
+/* HERO */
+.hero{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 5rem}
+.hero-badge{display:inline-flex;align-items:center;gap:0.5rem;font-family:var(--mono);font-size:0.7rem;color:var(--accent2);border:1px solid rgba(0,229,176,0.2);background:rgba(0,229,176,0.05);padding:0.35rem 1rem;border-radius:100px;margin-bottom:2.5rem;letter-spacing:0.1em;text-transform:uppercase;animation:fadeUp 0.6s ease both}
+.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent2);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+h1{font-family:var(--display);font-size:clamp(3.2rem,9vw,7rem);font-weight:800;line-height:0.95;letter-spacing:-0.05em;margin-bottom:1.8rem;animation:fadeUp 0.7s 0.1s ease both}
+h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:clamp(1rem,2vw,1.15rem);color:var(--muted);max-width:520px;margin:0 auto 3rem;font-weight:300;animation:fadeUp 0.7s 0.2s ease both}
+.hero-actions{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.7s 0.3s ease both}
+.btn-primary{display:inline-flex;align-items:center;gap:0.5rem;background:var(--accent);color:#fff;text-decoration:none;padding:0.85rem 1.8rem;border-radius:8px;font-size:0.9rem;font-weight:500;font-family:var(--sans);transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 0 30px rgba(124,111,255,0.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(124,111,255,0.5)}
+.btn-secondary{display:inline-flex;align-items:center;gap:0.5rem;background:transparent;color:var(--muted);text-decoration:none;padding:0.85rem 1.8rem;border-radius:8px;font-size:0.9rem;font-weight:400;font-family:var(--sans);border:1px solid var(--border2);transition:color 0.2s,border-color 0.2s,transform 0.2s}
+.btn-secondary:hover{color:var(--text);border-color:rgba(255,255,255,0.2);transform:translateY(-2px)}
+.scroll-hint{position:absolute;bottom:2.5rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:0.5rem;animation:fadeUp 1s 0.8s ease both}
+.scroll-hint span{font-size:0.65rem;color:var(--muted);font-family:var(--mono);letter-spacing:0.1em;text-transform:uppercase}
+.scroll-mouse{width:22px;height:34px;border:1px solid var(--border2);border-radius:12px;display:flex;justify-content:center;padding-top:6px}
+.scroll-dot{width:3px;height:6px;background:var(--accent);border-radius:3px;animation:scrollDot 1.8s infinite}
+@keyframes scrollDot{0%{transform:translateY(0);opacity:1}100%{transform:translateY(10px);opacity:0}}
+
+/* STATS */
+.stats{position:relative;z-index:1;display:flex;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
+.stat{flex:1;min-width:120px;text-align:center;padding:2rem 1.2rem;border-right:1px solid var(--border)}
+.stat:last-child{border-right:none}
+.stat-num{font-family:var(--display);font-size:1.9rem;font-weight:700;color:var(--text);display:block;line-height:1;margin-bottom:0.3rem}
+.stat-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-family:var(--mono)}
+
+/* WRAPPER */
+.wrapper{position:relative;z-index:1;max-width:1140px;margin:0 auto;padding:6rem 2rem}
+.section-label{font-family:var(--mono);font-size:0.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:0.8rem;display:block}
+h2{font-family:var(--display);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;line-height:1.05;margin-bottom:0.8rem}
+.section-desc{color:var(--muted);font-size:0.95rem;max-width:480px;margin-bottom:3.5rem}
+
+/* FEATURES */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.feature-card{background:var(--surface);padding:2rem;transition:background 0.25s}
+.feature-card:hover{background:var(--surface2)}
+.feature-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:1.2rem;font-size:1.1rem}
+.icon-purple{background:rgba(124,111,255,0.12)}.icon-teal{background:rgba(0,229,176,0.1)}.icon-red{background:rgba(255,107,138,0.1)}.icon-amber{background:rgba(255,179,71,0.1)}.icon-blue{background:rgba(59,130,246,0.1)}.icon-green{background:rgba(52,211,153,0.1)}
+.feature-title{font-family:var(--display);font-size:1rem;font-weight:600;margin-bottom:0.5rem;color:var(--text)}
+.feature-desc{font-size:0.875rem;color:var(--muted);line-height:1.6}
+
+/* MODULES */
+.modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.module-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;transition:border-color 0.25s,transform 0.25s}
+.module-card:hover{border-color:var(--border2);transform:translateY(-3px)}
+.module-header{padding:1.5rem 1.8rem 1.2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem}
+.module-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
+.module-name{font-family:var(--display);font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:0.15rem}
+.module-tag{font-family:var(--mono);font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em}
+.module-body{padding:1.5rem 1.8rem}
+.module-endpoints{display:flex;flex-direction:column;gap:8px}
+.me{display:flex;align-items:center;gap:0.75rem}
+.method{font-family:var(--mono);font-size:0.65rem;font-weight:500;padding:0.18rem 0.55rem;border-radius:4px;min-width:44px;text-align:center}
+.method-get{background:rgba(0,229,176,0.1);color:var(--accent2)}
+.method-post{background:rgba(124,111,255,0.1);color:var(--accent)}
+.method-put{background:rgba(255,179,71,0.1);color:var(--amber)}
+.method-delete{background:rgba(255,107,138,0.1);color:var(--accent3)}
+.me-path{font-family:var(--mono);font-size:0.78rem;color:var(--text);flex:1}
+.me-desc{font-size:0.72rem;color:var(--muted)}
+
+/* COMPILER */
+.compiler-showcase{display:grid;grid-template-columns:1fr 1.4fr;gap:2rem;align-items:center}
+.compiler-tabs{display:flex;flex-direction:column;gap:10px}
+.compiler-tab{display:flex;align-items:center;gap:1rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.2rem;cursor:pointer;transition:border-color 0.2s,background 0.2s}
+.compiler-tab.active{border-color:var(--accent);background:rgba(124,111,255,0.06)}
+.compiler-tab-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.compiler-tab-name{font-family:var(--display);font-size:0.9rem;font-weight:600;color:var(--text);margin-bottom:0.1rem}
+.compiler-tab-desc{font-size:0.75rem;color:var(--muted)}
+.compiler-tab-badge{margin-left:auto;font-family:var(--mono);font-size:0.65rem;padding:0.2rem 0.6rem;border-radius:100px;background:rgba(0,229,176,0.1);color:var(--accent2)}
+.code-window{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.code-titlebar{display:flex;align-items:center;gap:0.5rem;padding:0.9rem 1.2rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.02)}
+.dot-r{width:10px;height:10px;border-radius:50%;background:#ff5f57}
+.dot-a{width:10px;height:10px;border-radius:50%;background:#ffbd2e}
+.dot-g{width:10px;height:10px;border-radius:50%;background:#28c840}
+.code-filename{font-family:var(--mono);font-size:0.72rem;color:var(--muted);margin-left:0.5rem}
+.code-body{padding:1.5rem;font-family:var(--mono);font-size:0.82rem;line-height:1.8;min-height:300px;position:relative}
+.code-panel{position:absolute;inset:1.5rem;transition:opacity 0.4s,transform 0.4s}
+.code-panel.hidden{opacity:0;transform:translateY(8px);pointer-events:none}
+.code-panel.visible{opacity:1;transform:translateY(0)}
+.kw{color:#bb9af7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.cls{color:#e0af68}
+.code-output{margin-top:1rem;border-top:1px solid var(--border);padding-top:0.8rem}
+.output-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.3rem}
+.output-text{color:var(--accent2);font-size:0.8rem}
+
+/* TEST */
+.test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:2.5rem}
+.test-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center;transition:border-color 0.2s,transform 0.2s}
+.test-card:hover{border-color:var(--border2);transform:translateY(-2px)}
+.test-num{font-family:var(--display);font-size:2.4rem;font-weight:800;line-height:1;margin-bottom:0.3rem;display:block}
+.test-label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--mono)}
+.coverage-bars{display:flex;flex-direction:column;gap:12px}
+.coverage-row{display:flex;align-items:center;gap:1rem}
+.coverage-module{font-family:var(--mono);font-size:0.78rem;color:var(--text);min-width:140px}
+.coverage-bar-wrap{flex:1;background:rgba(255,255,255,0.05);border-radius:100px;height:6px;overflow:hidden}
+.coverage-bar{height:100%;border-radius:100px;transition:width 1.2s cubic-bezier(0.4,0,0.2,1)}
+.coverage-pct{font-family:var(--mono);font-size:0.75rem;color:var(--muted);min-width:36px;text-align:right}
+
+/* ARCH */
+.arch-flow{display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;flex-wrap:wrap}
+.arch-step{flex:1;min-width:120px;padding:2rem 1.2rem;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
+.arch-step:last-child{border-right:none}
+.arch-step:hover{background:var(--surface2)}
+.arch-step-num{font-family:var(--mono);font-size:0.62rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.5rem;display:block}
+.arch-step-name{font-family:var(--display);font-size:0.9rem;font-weight:600;color:var(--text);margin-bottom:0.3rem}
+.arch-step-desc{font-size:0.72rem;color:var(--muted)}
+
+/* STACK */
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stack-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem;text-align:center;transition:border-color 0.2s,transform 0.2s}
+.stack-item:hover{border-color:var(--border2);transform:translateY(-2px)}
+.stack-dot{width:8px;height:8px;border-radius:50%;margin:0 auto 0.7rem}
+.stack-name{font-family:var(--mono);font-size:0.76rem;color:var(--text);display:block;margin-bottom:0.2rem}
+.stack-role{font-size:0.68rem;color:var(--muted)}
+
+/* FOOTER */
+footer{position:relative;z-index:1;border-top:1px solid var(--border);background:var(--surface);padding:3rem 4rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+.footer-brand{font-family:var(--display);font-weight:700;font-size:1rem;color:var(--text)}
+.footer-brand span{color:var(--accent)}
+.footer-links{display:flex;gap:1.5rem;list-style:none}
+.footer-links a{font-size:0.82rem;color:var(--muted);text-decoration:none;transition:color 0.2s}
+.footer-links a:hover{color:var(--text)}
+.footer-copy{font-size:0.75rem;color:var(--muted);font-family:var(--mono)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+
+@media(max-width:900px){
+  nav{padding:1rem 1.5rem}.nav-links{display:none}
+  .stat{border-right:none;border-bottom:1px solid var(--border)}.stat:last-child{border-bottom:none}
+  .compiler-showcase{grid-template-columns:1fr}
+  .arch-step{border-right:none;border-bottom:1px solid var(--border)}.arch-step:last-child{border-bottom:none}
+  footer{padding:2rem 1.5rem;flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+<canvas id="particles"></canvas>
+<div class="grid-bg"></div>
+<div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+
+<nav>
+  <a href="/" class="nav-logo">Nexus<span>API</span></a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#modules">Modules</a></li>
+    <li><a href="#compiler">Compiler</a></li>
+    <li><a href="#stack">Stack</a></li>
+    <li><a href="/api/schema/swagger-ui/" class="nav-cta">API Docs →</a></li>
+  </ul>
+</nav>
+
+<div class="hero">
+  <div class="hero-badge">Live on Azure · SSL Secured · CI/CD Active</div>
+  <h1>Academic<br>Management<br><em>Reimagined</em></h1>
+  <p class="hero-sub">A production-grade REST API for universities — managing students, faculty, courses, enrollments, and live multi-language code execution in isolated containers.</p>
+  <div class="hero-actions">
+    <a href="/api/schema/swagger-ui/" class="btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Explore API Docs
+    </a>
+    <a href="https://github.com/HasnatAkram" class="btn-secondary" target="_blank">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      GitHub
+    </a>
+  </div>
+  <div class="scroll-hint">
+    <div class="scroll-mouse"><div class="scroll-dot"></div></div>
+    <span>Scroll</span>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat reveal"><span class="stat-num">6</span><span class="stat-label">Docker Services</span></div>
+  <div class="stat reveal" style="transition-delay:.08s"><span class="stat-num">3</span><span class="stat-label">Language Compilers</span></div>
+  <div class="stat reveal" style="transition-delay:.15s"><span class="stat-num">2×</span><span class="stat-label">Compiler Replicas</span></div>
+  <div class="stat reveal" style="transition-delay:.22s"><span class="stat-num">JWT</span><span class="stat-label">Authentication</span></div>
+  <div class="stat reveal" style="transition-delay:.29s"><span class="stat-num">Redis</span><span class="stat-label">2-Layer Cache</span></div>
+  <div class="stat reveal" style="transition-delay:.36s"><span class="stat-num">SSL</span><span class="stat-label">Let's Encrypt</span></div>
+</div>
+
+<!-- FEATURES -->
+<div class="wrapper" id="features">
+  <span class="section-label reveal">// capabilities</span>
+  <h2 class="reveal">Everything a university<br>backend needs</h2>
+  <p class="section-desc reveal">Built with real production patterns — caching, async tasks, role-based access, and live sandboxed code execution.</p>
+  <div class="features-grid">
+    <div class="feature-card reveal"><div class="feature-icon icon-purple">🎓</div><div class="feature-title">Academic Management</div><p class="feature-desc">Full CRUD for students, faculty, courses, departments, and semester lifecycle with role-based permissions per module.</p></div>
+    <div class="feature-card reveal" style="transition-delay:.08s"><div class="feature-icon icon-teal">⚡</div><div class="feature-title">Live Code Execution</div><p class="feature-desc">Isolated compiler microservices for Python, C/C++, and Java. Each runs in its own container, sandboxed per request with timeout protection.</p></div>
+    <div class="feature-card reveal" style="transition-delay:.15s"><div class="feature-icon icon-amber">🔐</div><div class="feature-title">JWT Authentication</div><p class="feature-desc">Secure token-based auth with access and refresh tokens, configurable lifetimes, and role-aware permission classes.</p></div>
+    <div class="feature-card reveal" style="transition-delay:.05s"><div class="feature-icon icon-blue">🚀</div><div class="feature-title">Two-Layer Redis Cache</div><p class="feature-desc">Class-level cache pre-built by Celery on semester activation. Student-level cache built on demand. Dramatically reduces DB load.</p></div>
+    <div class="feature-card reveal" style="transition-delay:.1s"><div class="feature-icon icon-green">📋</div><div class="feature-title">Async Task Queue</div><p class="feature-desc">Celery workers handle cache warming, email notifications, and GPA recalculation asynchronously with Redis as the broker.</p></div>
+    <div class="feature-card reveal" style="transition-delay:.15s"><div class="feature-icon icon-red">☁️</div><div class="feature-title">Cloud Storage + CI/CD</div><p class="feature-desc">Cloudinary for media. GitHub Actions auto-deploys every push to Azure VM. Zero-downtime rebuilds with Docker Compose.</p></div>
+  </div>
+</div>
+
+<!-- MODULES -->
+<div class="wrapper" id="modules">
+  <span class="section-label reveal">// modules</span>
+  <h2 class="reveal">Three core modules,<br>one unified API</h2>
+  <p class="section-desc reveal">Each module handles its own domain with dedicated serializers, permissions, views, and test suites.</p>
+  <div class="modules-grid">
+    <div class="module-card reveal">
+      <div class="module-header"><div class="module-icon icon-purple">🛡️</div><div><div class="module-name">AdminModule</div><div class="module-tag">System Administration</div></div></div>
+      <div class="module-body"><div class="module-endpoints">
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/students/</span><span class="me-desc">Create student</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/admin/courses/</span><span class="me-desc">List all courses</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/semester/activate/</span><span class="me-desc">Activate semester</span></div>
+        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/admin/faculty/{id}/</span><span class="me-desc">Update faculty</span></div>
+        <div class="me"><span class="method method-delete">DEL</span><span class="me-path">/api/admin/department/{id}/</span><span class="me-desc">Remove department</span></div>
+      </div></div>
+    </div>
+    <div class="module-card reveal" style="transition-delay:.1s">
+      <div class="module-header"><div class="module-icon icon-blue">👨‍🏫</div><div><div class="module-name">FacultyModule</div><div class="module-tag">Faculty Operations</div></div></div>
+      <div class="module-body"><div class="module-endpoints">
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/courses/</span><span class="me-desc">Assigned courses</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/faculty/grades/</span><span class="me-desc">Submit grades</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/students/</span><span class="me-desc">Course students</span></div>
+        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/faculty/attendance/</span><span class="me-desc">Mark attendance</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/results/</span><span class="me-desc">Course results</span></div>
+      </div></div>
+    </div>
+    <div class="module-card reveal" style="transition-delay:.2s">
+      <div class="module-header"><div class="module-icon icon-teal">🎒</div><div><div class="module-name">StudentModule</div><div class="module-tag">Student Portal</div></div></div>
+      <div class="module-body"><div class="module-endpoints">
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/profile/</span><span class="me-desc">My profile</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/student/enroll/</span><span class="me-desc">Enroll in course</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/grades/</span><span class="me-desc">My grades + GPA</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/timetable/</span><span class="me-desc">My schedule</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/compiler/run/</span><span class="me-desc">Execute code</span></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<!-- COMPILER -->
+<div class="wrapper" id="compiler">
+  <span class="section-label reveal">// compiler engine</span>
+  <h2 class="reveal">Multi-language code<br>execution engine</h2>
+  <p class="section-desc reveal">Each language runs in its own isolated Docker container with 2 replicas for load balancing. Upload a file, get output back — with timeout and stdin support.</p>
+  <div class="compiler-showcase">
+    <div class="compiler-tabs reveal-left">
+      <div class="compiler-tab active" data-lang="python">
+        <div class="compiler-tab-icon icon-teal">🐍</div>
+        <div><div class="compiler-tab-name">Python</div><div class="compiler-tab-desc">Python 3.12 · FastAPI runner</div></div>
+        <span class="compiler-tab-badge">Live</span>
+      </div>
+      <div class="compiler-tab" data-lang="c">
+        <div class="compiler-tab-icon icon-amber">⚙️</div>
+        <div><div class="compiler-tab-name">C / C++</div><div class="compiler-tab-desc">GCC · Ubuntu 22.04</div></div>
+        <span class="compiler-tab-badge">Live</span>
+      </div>
+      <div class="compiler-tab" data-lang="java">
+        <div class="compiler-tab-icon icon-red">☕</div>
+        <div><div class="compiler-tab-name">Java</div><div class="compiler-tab-desc">JDK 21 · Eclipse Temurin</div></div>
+        <span class="compiler-tab-badge">Live</span>
+      </div>
+    </div>
+    <div class="code-window reveal-right">
+      <div class="code-titlebar">
+        <div class="dot-r"></div><div class="dot-a"></div><div class="dot-g"></div>
+        <span class="code-filename" id="code-filename">main.py</span>
+      </div>
+      <div class="code-body">
+        <div class="code-panel visible" id="panel-python">
+<span class="cm"># Fibonacci sequence</span>
+<span class="kw">def</span> <span class="fn">fibonacci</span>(n):
+    a, b <span class="op">=</span> <span class="num">0</span>, <span class="num">1</span>
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="fn">print</span>(a, end<span class="op">=</span><span class="str">' '</span>)
+        a, b <span class="op">=</span> b, a <span class="op">+</span> b
+
+fibonacci(<span class="num">10</span>)
+          <div class="code-output"><div class="output-label">stdout</div><div class="output-text">0 1 1 2 3 5 8 13 21 34</div></div>
+        </div>
+        <div class="code-panel hidden" id="panel-c">
+<span class="cm">// Bubble sort</span>
+<span class="kw">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">void</span> <span class="fn">bubbleSort</span>(<span class="kw">int</span> arr[], <span class="kw">int</span> n) {
+    <span class="kw">for</span> (<span class="kw">int</span> i<span class="op">=</span><span class="num">0</span>; i<span class="op">&lt;</span>n<span class="op">-</span><span class="num">1</span>; i<span class="op">++</span>)
+        <span class="kw">for</span> (<span class="kw">int</span> j<span class="op">=</span><span class="num">0</span>; j<span class="op">&lt;</span>n<span class="op">-</span>i<span class="op">-</span><span class="num">1</span>; j<span class="op">++</span>)
+            <span class="kw">if</span> (arr[j] <span class="op">&gt;</span> arr[j<span class="op">+</span><span class="num">1</span>]) {
+                <span class="kw">int</span> t<span class="op">=</span>arr[j];
+                arr[j]<span class="op">=</span>arr[j<span class="op">+</span><span class="num">1</span>];
+                arr[j<span class="op">+</span><span class="num">1</span>]<span class="op">=</span>t;
+            }
+}
+<span class="kw">int</span> <span class="fn">main</span>(){
+    <span class="kw">int</span> a[]<span class="op">=</span>{<span class="num">64</span>,<span class="num">34</span>,<span class="num">25</span>,<span class="num">12</span>,<span class="num">22</span>};
+    bubbleSort(a,<span class="num">5</span>);
+    <span class="kw">for</span>(<span class="kw">int</span> i<span class="op">=</span><span class="num">0</span>;i<span class="op">&lt;</span><span class="num">5</span>;i<span class="op">++</span>) <span class="fn">printf</span>(<span class="str">"%d "</span>,a[i]);
+}
+          <div class="code-output"><div class="output-label">stdout</div><div class="output-text">12 22 25 34 64</div></div>
+        </div>
+        <div class="code-panel hidden" id="panel-java">
+<span class="cm">// Binary search</span>
+<span class="kw">public class</span> <span class="cls">Main</span> {
+  <span class="kw">static int</span> <span class="fn">search</span>(<span class="kw">int</span>[] a, <span class="kw">int</span> t) {
+    <span class="kw">int</span> l<span class="op">=</span><span class="num">0</span>, r<span class="op">=</span>a.length<span class="op">-</span><span class="num">1</span>;
+    <span class="kw">while</span>(l<span class="op">&lt;=</span>r){
+      <span class="kw">int</span> m<span class="op">=</span>(l<span class="op">+</span>r)<span class="op">/</span><span class="num">2</span>;
+      <span class="kw">if</span>(a[m]<span class="op">==</span>t) <span class="kw">return</span> m;
+      <span class="kw">if</span>(a[m]<span class="op">&lt;</span>t) l<span class="op">=</span>m<span class="op">+</span><span class="num">1</span>;
+      <span class="kw">else</span> r<span class="op">=</span>m<span class="op">-</span><span class="num">1</span>;
+    }
+    <span class="kw">return</span> <span class="op">-</span><span class="num">1</span>;
+  }
+  <span class="kw">public static void</span> <span class="fn">main</span>(String[] args){
+    <span class="kw">int</span>[] a<span class="op">=</span>{<span class="num">2</span>,<span class="num">5</span>,<span class="num">9</span>,<span class="num">15</span>,<span class="num">28</span>,<span class="num">43</span>};
+    System.out.<span class="fn">println</span>(<span class="fn">search</span>(a,<span class="num">15</span>));
+  }
+}
+          <div class="code-output"><div class="output-label">stdout</div><div class="output-text">3</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TEST STATS -->
+<div class="wrapper">
+  <span class="section-label reveal">// test suite</span>
+  <h2 class="reveal">Tested, not assumed</h2>
+  <p class="section-desc reveal">Comprehensive pytest test suite covering API endpoints, serializers, views, caching logic, and Celery tasks across all modules.</p>
+  <div class="test-grid">
+    <div class="test-card reveal"><span class="test-num" style="color:var(--accent2)">40+</span><span class="test-label">Total Tests</span></div>
+    <div class="test-card reveal" style="transition-delay:.08s"><span class="test-num" style="color:var(--accent)">3</span><span class="test-label">Modules Covered</span></div>
+    <div class="test-card reveal" style="transition-delay:.15s"><span class="test-num" style="color:var(--amber)">pytest</span><span class="test-label">Test Framework</span></div>
+    <div class="test-card reveal" style="transition-delay:.22s"><span class="test-num" style="color:var(--accent3)">xfail</span><span class="test-label">Known Issues Tracked</span></div>
+  </div>
+  <div class="coverage-bars reveal">
+    <div class="coverage-row"><span class="coverage-module">AdminModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="82" style="width:0%;background:var(--accent)"></div></div><span class="coverage-pct">82%</span></div>
+    <div class="coverage-row"><span class="coverage-module">FacultyModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="78" style="width:0%;background:var(--accent2)"></div></div><span class="coverage-pct">78%</span></div>
+    <div class="coverage-row"><span class="coverage-module">StudentModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="65" style="width:0%;background:var(--amber)"></div></div><span class="coverage-pct">65%</span></div>
+    <div class="coverage-row"><span class="coverage-module">Models</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="90" style="width:0%;background:var(--accent3)"></div></div><span class="coverage-pct">90%</span></div>
+  </div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div class="wrapper">
+  <span class="section-label reveal">// architecture</span>
+  <h2 class="reveal">Request lifecycle</h2>
+  <p class="section-desc reveal">Every request flows through a secure, optimized pipeline from client to response.</p>
+  <div class="arch-flow reveal">
+    <div class="arch-step"><span class="arch-step-num">01</span><div class="arch-step-name">Client</div><div class="arch-step-desc">HTTPS request</div></div>
+    <div class="arch-step"><span class="arch-step-num">02</span><div class="arch-step-name">Nginx</div><div class="arch-step-desc">SSL + reverse proxy</div></div>
+    <div class="arch-step"><span class="arch-step-num">03</span><div class="arch-step-name">Gunicorn</div><div class="arch-step-desc">WSGI · 3 workers</div></div>
+    <div class="arch-step"><span class="arch-step-num">04</span><div class="arch-step-name">Django DRF</div><div class="arch-step-desc">Auth · permissions</div></div>
+    <div class="arch-step"><span class="arch-step-num">05</span><div class="arch-step-name">Redis / MySQL</div><div class="arch-step-desc">Cache or DB query</div></div>
+    <div class="arch-step"><span class="arch-step-num">06</span><div class="arch-step-name">Response</div><div class="arch-step-desc">JSON · paginated</div></div>
+  </div>
+</div>
+
+<!-- STACK -->
+<div class="wrapper" id="stack">
+  <span class="section-label reveal">// tech stack</span>
+  <h2 class="reveal">Built with the right tools</h2>
+  <p class="section-desc reveal">Production-grade technologies, containerized and orchestrated on Azure.</p>
+  <div class="stack-grid">
+    <div class="stack-item reveal"><div class="stack-dot" style="background:#092e20;border:2px solid #44b78b"></div><span class="stack-name">Django 5.2</span><span class="stack-role">Web framework</span></div>
+    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#1a1a2e;border:2px solid #7c6fff"></div><span class="stack-name">DRF</span><span class="stack-role">REST API</span></div>
+    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#1a1a1a;border:2px solid #00758f"></div><span class="stack-name">MySQL 8</span><span class="stack-role">Database</span></div>
+    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a0a0a;border:2px solid #dc382d"></div><span class="stack-name">Redis</span><span class="stack-role">Cache + broker</span></div>
+    <div class="stack-item reveal" style="transition-delay:.2s"><div class="stack-dot" style="background:#0a1a0a;border:2px solid #37814a"></div><span class="stack-name">Celery</span><span class="stack-role">Task queue</span></div>
+    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#1a1a0a;border:2px solid #0db7ed"></div><span class="stack-name">Docker</span><span class="stack-role">Containers</span></div>
+    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#0a0a1a;border:2px solid #009639"></div><span class="stack-name">Nginx</span><span class="stack-role">Reverse proxy</span></div>
+    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a1a1a;border:2px solid #f7931e"></div><span class="stack-name">Cloudinary</span><span class="stack-role">File storage</span></div>
+    <div class="stack-item reveal" style="transition-delay:.2s"><div class="stack-dot" style="background:#1a0a1a;border:2px solid #00e5b0"></div><span class="stack-name">FastAPI</span><span class="stack-role">Compiler APIs</span></div>
+    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#0a0a0a;border:2px solid #aaaaaa"></div><span class="stack-name">Azure VM</span><span class="stack-role">Cloud hosting</span></div>
+    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#0a1a0a;border:2px solid #2088ff"></div><span class="stack-name">GitHub Actions</span><span class="stack-role">CI/CD</span></div>
+    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a1a0a;border:2px solid #003a70"></div><span class="stack-name">Let's Encrypt</span><span class="stack-role">SSL/TLS</span></div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-brand">Nexus<span>API</span></div>
+  <ul class="footer-links">
+    <li><a href="/api/schema/swagger-ui/">Swagger UI</a></li>
+    <li><a href="/api/schema/redoc/">ReDoc</a></li>
+    <li><a href="https://github.com/HasnatAkram" target="_blank">GitHub</a></li>
+  </ul>
+  <span class="footer-copy">Built by Hasnat Akram · Namal University · 2025</span>
+</footer>
+
+<script>
+const canvas=document.getElementById('particles');
+const ctx=canvas.getContext('2d');
+let W,H,pts=[];
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+resize();window.addEventListener('resize',resize);
+function Pt(){this.x=Math.random()*W;this.y=Math.random()*H;this.vx=(Math.random()-.5)*.3;this.vy=(Math.random()-.5)*.3;this.r=Math.random()*1.5+.5;this.alpha=Math.random()*.35+.1;this.col=Math.random()>.5?'124,111,255':'0,229,176'}
+for(let i=0;i<80;i++)pts.push(new Pt());
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  pts.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${p.col},${p.alpha})`;ctx.fill();
+  });
+  for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+    const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<130){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);ctx.strokeStyle=`rgba(124,111,255,${.07*(1-d/130)})`;ctx.lineWidth=.5;ctx.stroke()}
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+
+// SCROLL REVEAL
+const obs=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')}),{threshold:0.1});
+document.querySelectorAll('.reveal,.reveal-left,.reveal-right').forEach(el=>obs.observe(el));
+
+// COVERAGE BARS
+const barObs=new IntersectionObserver(entries=>entries.forEach(e=>{
+  if(e.isIntersecting)e.target.querySelectorAll('.coverage-bar').forEach(b=>{setTimeout(()=>{b.style.width=b.getAttribute('data-width')+'%'},200)});
+}),{threshold:0.3});
+document.querySelectorAll('.coverage-bars').forEach(el=>barObs.observe(el));
+
+// COMPILER TABS
+const filenames={python:'main.py',c:'main.c',java:'Main.java'};
+document.querySelectorAll('.compiler-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    const lang=tab.getAttribute('data-lang');
+    document.querySelectorAll('.compiler-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.code-panel').forEach(p=>{p.classList.remove('visible');p.classList.add('hidden')});
+    const panel=document.getElementById('panel-'+lang);
+    if(panel){panel.classList.remove('hidden');panel.classList.add('visible')}
+    document.getElementById('code-filename').textContent=filenames[lang];
+  });
+});
+</script>
+</body>
+</html>

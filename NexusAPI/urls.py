@@ -28,11 +28,17 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView
 )
+
+from django.views.generic import TemplateView
+
+
+
 urlpatterns = [
+        # landing page
+        path('', TemplateView.as_view(template_name='index.html'), name='home'),
         # django admin site
         path('admin/', admin.site.urls),
-        # DRF TokenAuthentication
-        path('auth/', obtain_auth_token),
+
         # JWT Authentication
         path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
         path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

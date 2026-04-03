@@ -35,12 +35,12 @@ class ReviewsSerializer(serializers.ModelSerializer):
             'enrollment',
             'review_text',
             'rating',
-            'create_date',
+            'timestamp',
         ]
         extra_kwargs = {
             'review_id' : {'read_only': True},
             'enrollment': {'read_only': True},
-            'create_date' : {'read_only': True},
+            'timestamp' : {'read_only': True},
         }
 
     def create(self, validated_data):

@@ -903,26 +903,23 @@ class ChangeRequestRetrieveUpdateAPIView(
     queryset = ChangeRequest.objects.all()
     serializer_class = ChangeRequestSerializer
 
-"""
 
 @extend_schema(
     responses={
-        200:OpenApiResponse(
+        200: OpenApiResponse(
             description="Request Confirmation Success",
-            examples={
+            examples=[
                 OpenApiExample(
                     'Success Example',
-                    value={'message' : 'Change Request confirmation successfully'},
+                    value={'message': 'Change Request confirmation successfully'},
                 )
-            }
+            ]
         ),
-        400:OpenApiResponse(
+        400: OpenApiResponse(
             description="Link expired or already processed",
         )
     }
 )
-
-"""
 class ChangeRequestView(APIView):
     authentication_classes = []
     permission_classes = []

@@ -28,6 +28,7 @@ class ReviewsSerializer(serializers.ModelSerializer):
     )
     class Meta:
         model = Reviews
+        ref_name = 'ReviewDetail'
         fields = [
             'urls',
             'review_id',

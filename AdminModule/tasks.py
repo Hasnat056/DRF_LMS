@@ -150,7 +150,7 @@ def cache_student_data_task(user_id):
     for each in programs:
         cache_key = f'admin:students:program:{each.program_id}'
         cache.delete(cache_key)
-        program_data = queryset.filter(program_id=each.program_id)
+        program_data = queryset.filter(program=each.program_id)
         serializer = StudentSerializer(program_data,context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
 
@@ -158,7 +158,7 @@ def cache_student_data_task(user_id):
     for each in classes:
         cache_key = f'admin:students:class:{each.class_id}'
         cache.delete(cache_key)
-        class_data = queryset.filter(class_id=each.class_id)
+        class_data = queryset.filter(student_class=each.class_id)
         serializer = StudentSerializer(class_data,context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
 
@@ -226,11 +226,12 @@ def cache_semester_data_task(user_id):
 
     classes = Class.objects.all()
     for each in classes:
-        class_data = queryset.filter(semesterdetails__class_=each.class_id).distinct()
+        class_data = queryset.filter(semesterdetails__student_class=each.class_id).distinct()
         cache_key = f'admin:semesters:class:{each.class_id}'
         cache.delete(cache_key)
         serializer = SemesterSerializer(class_data,context=context, many=True)
         cache.set(cache_key, serializer.data, timeout=60*10)
+
 
     return "Semester data has been cached successfully"
 
@@ -303,22 +304,23 @@ def cache_enrollment_data_task(user_id):
 @shared_task
 def cache_semester_enrollment_data_task(semester_id):
     semester = Semester.objects.get(semester_id=semester_id)
-    class_ = Class.objects.filter(semesterdetails__semester=semester).first()
-    if not class_:
+    student_class = Class.objects.filter(semesterdetails__semester=semester).first()
+    if not student_class:
         return 'Class not found'
 
-    cache_key = f'enrollments:{class_.class_id}:semester:allocations'
+    cache_key = f'enrollments:{student_class.class_id}:semester:allocations'
 
     allocations = CourseAllocation.objects.filter(semester=semester).select_related('faculty__employee_id', 'course').all()
-    data = {}
+    data = []
     for each_allocation in allocations:
-        data[each_allocation.allocation_id] = {'faculty_data':{'faculty_id' : each_allocation.faculty.employee_id.person_id,
+         data.append({'allocation_id':each_allocation.allocation_id,
+                      'faculty_data':{'faculty_id' : each_allocation.faculty.employee_id.person_id,
                                                'faculty_name' : each_allocation.faculty.employee_id.first_name + ' ' + each_allocation.faculty.employee_id.last_name},
-                                               'course_data':{'course_code' : each_allocation.course.course_code,
+                      'course_data':{'course_code' : each_allocation.course.course_code,
                                                'course_name' : each_allocation.course.course_name,
                                                'credit_hours' : each_allocation.course.credit_hours,
                                                 'lab': each_allocation.course.lab,}
-                                               }
+                    })
 
     cache.set(cache_key, data,timeout=None)
 

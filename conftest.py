@@ -143,7 +143,7 @@ def program(db, department):
 @pytest.fixture
 def batch_class(db, program):
     return Class.objects.create(
-        program_id=program,
+        program=program,
         batch_year=2022,
     )
 
@@ -177,7 +177,7 @@ def faculty_instance(db, faculty_person, faculty_group, department):
     faculty_person.user.groups.add(faculty_group)
     return Faculty.objects.create(
         employee_id=faculty_person,
-        department_id=department,
+        department=department,
         designation='Lecturer',
         joining_date=date(2021, 1, 1),
     )
@@ -188,8 +188,8 @@ def student_instance(db, student_person, student_group, program, batch_class):
     student_person.user.groups.add(student_group)
     return Student.objects.create(
         student_id=student_person,
-        program_id=program,
-        class_id=batch_class,
+        program=program,
+        student_class=batch_class,
         admission_date=date(2022, 1, 1),
         status='Active',
     )
@@ -208,9 +208,9 @@ def inactive_semester(db, batch_class, course):
         activation_deadline=timezone.now() + timedelta(days=2),
     )
     SemesterDetails.objects.create(
-        semester_id=semester,
-        class_id=batch_class,
-        course_code=course,
+        semester=semester,
+        student_class=batch_class,
+        course=course,
     )
     return semester
 
@@ -224,9 +224,9 @@ def active_semester(db, batch_class, course):
         activation_deadline=timezone.now() - timedelta(days=1),
     )
     SemesterDetails.objects.create(
-        semester_id=semester,
-        class_id=batch_class,
-        course_code=course,
+        semester=semester,
+        student_class=batch_class,
+        course=course,
     )
     return semester
 
@@ -234,9 +234,9 @@ def active_semester(db, batch_class, course):
 @pytest.fixture
 def course_allocation(db, faculty_instance, course, inactive_semester):
     return CourseAllocation.objects.create(
-        teacher_id=faculty_instance,
-        course_code=course,
-        semester_id=inactive_semester,
+        faculty=faculty_instance,
+        course=course,
+        semester=inactive_semester,
         session='Fall-2024',
         status='Inactive',
     )
@@ -245,11 +245,11 @@ def course_allocation(db, faculty_instance, course, inactive_semester):
 @pytest.fixture
 def enrollment(db, student_instance, course_allocation):
     enrollment = Enrollment.objects.create(
-        student_id=student_instance,
-        allocation_id=course_allocation,
+        student=student_instance,
+        allocation=course_allocation,
         status='Inactive',
     )
-    Result.objects.create(enrollment_id=enrollment)
+    Result.objects.create(enrollment=enrollment)
     return enrollment
 
 
@@ -299,7 +299,7 @@ def faculty_user(faculty_instance):
 @pytest.fixture
 def assessment(db, course_allocation):
     return Assessment.objects.create(
-        allocation_id=course_allocation,
+        allocation=course_allocation,
         assessment_type='Quiz',
         assessment_name='Quiz 1',
         assessment_date=date.today(),
@@ -312,8 +312,8 @@ def assessment(db, course_allocation):
 @pytest.fixture
 def assessment_checked(db, assessment, enrollment):
     return AssessmentChecked.objects.create(
-        assessment_id=assessment,
-        enrollment_id=enrollment,
+        assessment=assessment,
+        enrollment=enrollment,
         obtained=None,
     )
 
@@ -323,15 +323,15 @@ def lecture(db, course_allocation, enrollment):
     lec = Lecture.objects.create(
         lecture_id=f'{course_allocation.allocation_id}-1',
         lecture_no=1,
-        allocation_id=course_allocation,
+        allocation=course_allocation,
         starting_time=timezone.now() - timedelta(hours=1),
         venue='Room 101',
         duration=60,
         topic='Introduction',
     )
     Attendance.objects.create(
-        lecture_id=lec,
-        student_id=enrollment.student_id,
+        lecture=lec,
+        enrollment=enrollment,
         attendance_date=lec.starting_time.date(),
     )
     return lec

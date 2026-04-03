@@ -144,20 +144,20 @@ class TestFacultyCourseAllocationView:
         self, faculty_client, faculty_instance, course_allocation, db
     ):
         """Faculty must only see their own allocations."""
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
         response = faculty_client.get(f'{FACULTY}/allocations/')
         assert response.status_code == 200
         for alloc in response.data.get('results', response.data):
-            assert alloc['teacher_id'] == faculty_instance.employee_id.person_id
+            assert alloc['faculty'] == faculty_instance.employee_id.person_id
 
     def test_inactive_allocations_not_shown(
         self, faculty_client, faculty_instance, course_allocation
     ):
         """Inactive allocations must not appear in faculty's allocation list."""
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Inactive'
         course_allocation.save()
 
@@ -171,7 +171,7 @@ class TestFacultyCourseAllocationView:
     ):
         """Only Ongoing and Completed allocations must be returned."""
         for status_val in ['Ongoing', 'Completed']:
-            course_allocation.teacher_id = faculty_instance
+            course_allocation.faculty = faculty_instance
             course_allocation.status = status_val
             course_allocation.save()
             response = faculty_client.get(f'{FACULTY}/allocations/')
@@ -180,7 +180,7 @@ class TestFacultyCourseAllocationView:
     def test_allocation_detail_accessible(
         self, faculty_client, faculty_instance, course_allocation
     ):
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
@@ -209,10 +209,10 @@ class TestFacultyCourseAllocationView:
         )
         other_faculty = Faculty.objects.create(
             employee_id=other_person,
-            department_id=dept,
+            department=dept,
             designation='Lecturer',
         )
-        course_allocation.teacher_id = other_faculty
+        course_allocation.faculty = other_faculty
         course_allocation.save()
 
         url = reverse('Faculty:allocation-detail', kwargs={
@@ -246,10 +246,10 @@ class TestAssessmentAPI:
     def test_faculty_can_create_assessment(
             self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.status = 'Active'
         enrollment.save()
 
@@ -262,16 +262,17 @@ class TestAssessmentAPI:
             'total_marks': 20,
             'student_submission': False,
         }, format='json')
+        print(response.data)
         assert response.status_code == 201
 
     def test_create_assessment_auto_creates_assessment_checked(
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         """Creating an assessment must auto-create AssessmentChecked for all enrollments."""
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
 
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
@@ -285,9 +286,9 @@ class TestAssessmentAPI:
         }, format='json')
         assert response.status_code == 201
         assessment = Assessment.objects.get(
-            allocation_id=course_allocation, assessment_name='Quiz 1'
+            allocation=course_allocation, assessment_name='Quiz 1'
         )
-        assert AssessmentChecked.objects.filter(assessment_id=assessment).count() == 1
+        assert AssessmentChecked.objects.filter(assessment=assessment).count() == 1
 
     def test_admin_can_only_read_assessments(self, admin_client, course_allocation):
         """Admin has read-only access to assessments."""
@@ -308,7 +309,7 @@ class TestAssessmentAPI:
     def test_assessment_cache_populated_on_list(
         self, faculty_client, faculty_instance, course_allocation
     ):
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.save()
         key = f'faculty:{faculty_instance.employee_id.user.username}:{course_allocation.allocation_id}:assessments'
         assert cache.get(key) is None
@@ -332,7 +333,7 @@ class TestLectureAPI:
     def test_faculty_can_list_lectures(
         self, faculty_client, faculty_instance, course_allocation
     ):
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
@@ -344,10 +345,10 @@ class TestLectureAPI:
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         """Creating a lecture must auto-create Attendance for all enrolled students."""
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
 
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/'
@@ -358,8 +359,8 @@ class TestLectureAPI:
             'topic': 'Intro',
         }, format='json')
         assert response.status_code == 201
-        lecture = Lecture.objects.get(allocation_id=course_allocation)
-        assert Attendance.objects.filter(lecture_id=lecture).count() == 1
+        lecture = Lecture.objects.get(allocation=course_allocation)
+        assert Attendance.objects.filter(lecture=lecture).count() == 1
 
     def test_student_cannot_create_lecture(self, student_client, course_allocation):
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/'
@@ -390,7 +391,7 @@ class TestResultCalculationRequest:
         self, faculty_client, faculty_instance, course_allocation, admin_instance,
             db
     ):
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
@@ -404,7 +405,7 @@ class TestResultCalculationRequest:
         self, faculty_client, faculty_instance, course_allocation, db
     ):
         """If a pending request already exists, a new one must be blocked."""
-        course_allocation.teacher_id = faculty_instance
+        course_allocation.faculty = faculty_instance
         course_allocation.save()
         ChangeRequest.objects.create(
             change_type='result_calculation',
@@ -438,11 +439,11 @@ class TestResultCalculationRequest:
         )
         other_faculty = Faculty.objects.create(
             employee_id=other_person,
-            department_id=course_allocation.teacher_id.department_id,
+            department=course_allocation.faculty.department,
             designation='Lecturer',
             joining_date=date(2021, 1, 1),
         )
-        course_allocation.teacher_id = other_faculty
+        course_allocation.faculty = other_faculty
         course_allocation.save()
 
         url = reverse('Faculty:allocation-calculate-result', kwargs={

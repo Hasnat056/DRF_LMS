@@ -1,7 +1,7 @@
 import csv
 import io
 import re
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
 
 from django.core.cache import cache
@@ -513,7 +513,7 @@ class SchemeOfStudiesField(serializers.Field):
         return obj
 
     def to_representation(self, obj):
-        semester_list = Semester.objects.filter(semesterdetails__class_=obj.class_).distinct().prefetch_related(
+        semester_list = Semester.objects.filter(semesterdetails__student_class=obj.class_id).distinct().prefetch_related(
             'semesterdetails_set__course'
         )
         semester_serializer_list = []
@@ -561,7 +561,7 @@ class ClassSerializer(serializers.ModelSerializer):
 
         initial_semesterdetails_list = []
         for each in created_semesters_list:
-            semester_detail = SemesterDetails.objects.create(semester_id=each, class_=new_class)
+            semester_detail = SemesterDetails.objects.create(semester=each, student_class=new_class)
             initial_semesterdetails_list.append(semester_detail)
 
         return new_class
@@ -578,26 +578,28 @@ class ClassSerializer(serializers.ModelSerializer):
         if not scheme_of_studies:
             return instance
 
-        semester_ids = [s['semester_id'] for s in scheme_of_studies]
+        print(scheme_of_studies)
+
+        semester_ids = [s['semester'] for s in scheme_of_studies]
         semester_queryset = get_list_or_404(Semester, semester_id__in=semester_ids)
         loaded_semesters = {each.semester_id: each for each in semester_queryset}
 
         for each_semester in scheme_of_studies:
-            semester = loaded_semesters[each_semester['semester_id']]
+            semester = loaded_semesters[each_semester['semester']]
             #print(semester)
             if semester:
                 semester_detail_set = each_semester.pop('semesterdetails_set')
                 if len(semester_detail_set) > 1 or (
-                        len(semester_detail_set) == 1 and semester_detail_set[0]['course_code'] is not None):
+                        len(semester_detail_set) == 1 and semester_detail_set[0]['course'] is not None):
                     SemesterDetails.objects.filter(semester=semester).delete()
-                course_codes = [each['course_code'] for each in semester_detail_set if each['course_code'] is not None]
+                course_codes = [each['course'] for each in semester_detail_set if each['course'] is not None]
 
 
                 if course_codes:
                     course_queryset = get_list_or_404(Course, course_code__in=course_codes)
                     loaded_course_codes = {each.course_code: each for each in course_queryset}
                     for each in semester_detail_set:
-                        course = loaded_course_codes[each['course_code']]
+                        course = loaded_course_codes[each['course']]
                         SemesterDetails.objects.create(course=course, student_class=instance, semester=semester)
 
                 if 'session' in each_semester:
@@ -644,7 +646,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
     def get_student_info(self, obj):
         if obj and hasattr(obj, 'student'):
             return {'student_id': obj.student.student_id.person_id,
-                'name': obj.student.student_id.first_name + ' ' + obj.student.student_id.last_name}
+                'student_name': obj.student.student_id.first_name + ' ' + obj.student.student_id.last_name}
         else:
             return None
 
@@ -783,9 +785,13 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
            
                                                f"{", ".join(each.course_code for each in allowed_courses)}\n")
 
+        from .tasks import cache_semester_enrollment_data_task
+
         allocation = CourseAllocation.objects.create(**validated_data)
+        cache_semester_enrollment_data_task.delay(semester.semester_id)
 
         return allocation
+
 
 
 
@@ -1146,16 +1152,16 @@ class SemesterSerializer(serializers.ModelSerializer):
         return extra_kwargs
 
     def validate_activation_deadline(self, value):
-        if value < timezone.now():
+        if value and value < timezone.now():
             raise serializers.ValidationError('Activation deadline cannot be is the past')
-        if timezone.now() < value < timezone.now() + timedelta(minutes=7):
+        if value and (timezone.now() < value < timezone.now() + timedelta(minutes=7)):
             raise serializers.ValidationError('Set activation deadline at least a week ahead')
         return value
 
     def validate_closing_deadline(self, value):
-        if value < timezone.now():
+        if value and value < timezone.now():
             raise serializers.ValidationError('Closing deadline cannot be is the past')
-        if timezone.now() < value < timezone.now() + timedelta(minutes=7):
+        if value and (timezone.now() < value < timezone.now() + timedelta(minutes=7)):
             raise serializers.ValidationError('Set closing deadline at least a week ahead')
         return value
 
@@ -1186,6 +1192,7 @@ class SemesterSerializer(serializers.ModelSerializer):
                 self.fields.pop('transcript_generation_url')
 
     def update(self, instance, validated_data):
+
         cache_key = f'semester:activation:{instance.semester_id}'
         if 'activation_deadline' in validated_data:
             associated_class = Class.objects.filter(semesterdetails__semester=instance.semester_id).first()
@@ -1197,7 +1204,7 @@ class SemesterSerializer(serializers.ModelSerializer):
                ).first())
 
                if conflicting_semester:
-                    if conflicting_semester.status == 'Completed':
+                    if conflicting_semester.status == 'Active':
                         raise serializers.ValidationError(
                             f"Class: {associated_class} already has an active semester: {conflicting_semester}."
                         )
@@ -1222,9 +1229,10 @@ class SemesterSerializer(serializers.ModelSerializer):
                 return instance
 
             from .tasks import semester_activation_task, cache_semester_enrollment_data_task
+
             task = semester_activation_task.apply_async(args=[instance.semester_id], eta=instance.activation_deadline)
             cache.set(cache_key, task.id, timeout=None)
-            allocation_cache = cache_semester_enrollment_data_task.delay(instance.semester_id)
+            cache_semester_enrollment_data_task.delay(instance.semester_id)
 
             return instance
 

@@ -129,7 +129,11 @@ class AdminDashboardAPIView(
         if data is not None:
             return Response(data, status=status.HTTP_200_OK)
 
-        admin = get_object_or_404(Admin, employee_id__user=request.user)
+        admin = Admin.objects.filter(employee_id__user=request.user).select_related('employee_id').first()
+
+        if not admin:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
         admin_data = {
             'admin_id': admin.employee_id.person_id,
             'first_name': admin.employee_id.first_name,
@@ -225,19 +229,16 @@ class AdminProfileAPIView(
         cache_key = f'admin:{request.user.username}'
         cached_data = cache.get(cache_key)
 
-        # In production → skip DB query on cache hit
-        if not settings.DEBUG and cached_data is not None:
+        if cached_data is not None:
             return Response(cached_data, status=status.HTTP_200_OK)
 
-        # In development → allow browsable API to pre-fill form
-        admin_instance = Admin.objects.filter(employee_id__user=request.user).first()
+        admin_instance = Admin.objects.filter(employee_id__user=request.user).select_related('employee_id').first()
         if not admin_instance:
             return Response({'error': 'user not found'}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = self.serializer_class(admin_instance, context={'request': request})
 
-        if cached_data is None:  # only cache if not cached yet
-            cache.set(cache_key, serializer.data, timeout=60 * 60 * 24)
+        cache.set(cache_key, serializer.data, timeout=60*60*12)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -246,9 +247,9 @@ class AdminProfileAPIView(
         admin = Admin.objects.get(employee_id__user=request.user)
         serializer = self.serializer_class(admin, data=request.data, context={'request':request})
         if serializer.is_valid():
-            instance = serializer.save()
+            serializer.save()
             cache.delete(cache_key)
-            cache.set(cache_key,serializer.data,timeout=60*60*24)
+            cache.set(cache_key,serializer.data,timeout=60*60*12)
             return Response(serializer.data,status=status.HTTP_200_OK)
 
         return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
@@ -370,7 +371,7 @@ class StudentListCreateAPIView(
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['program', 'class_', 'program__department','status']
+    filterset_fields = ['program', 'student_class', 'program__department','status']
     search_fields = ['student_id__first_name', 'student_id__last_name', 'student_id__institutional_email']
 
     def list(self, request, *args, **kwargs):
@@ -645,7 +646,7 @@ class SemesterListAPIView(
     queryset = Semester.objects.all()
     serializer_class = SemesterSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['semesterdetails__class_']
+    filterset_fields = ['semesterdetails__student_class']
     
     def list(self, request, *args, **kwargs):
         cache_key = 'admin:semesters_list'
@@ -779,8 +780,12 @@ class CourseAllocationRetrieveUpdateDestroyAPIView(
         cache_courseAllocation_data_task.delay(self.request.user.id)
 
     def perform_destroy(self, instance):
+        semester = instance.semester
         instance.delete()
         cache_courseAllocation_data_task.delay(self.request.user.id)
+        from .tasks import cache_semester_enrollment_data_task
+        cache_semester_enrollment_data_task.delay(semester.semester_id)
+
 
 
 
@@ -964,7 +969,7 @@ class BulkCreateAPIView(
 
     def get(self, request, *args, **kwargs):
         if not request.query_params.get('type'):
-            return Response({"error": "Template type not specified"}, status=400)
+            return Response({"error": "Template type not specified. Options : ['student', 'faculty]"}, status=status.HTTP_400_BAD_REQUEST)
 
         target_model = request.query_params.get('type')
 

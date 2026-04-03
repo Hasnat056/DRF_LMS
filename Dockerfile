@@ -51,4 +51,4 @@ COPY . /app/
 USER drfuser
 
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["gunicorn", "NexusAPI.wsgi:application", "--bind", "0.0.0.0:8000"]

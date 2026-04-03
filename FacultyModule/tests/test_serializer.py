@@ -48,6 +48,7 @@ class TestAssessmentSerializerValidation:
 
     def _base_data(self, course_allocation):
         return {
+            'allocation' : course_allocation.allocation_id,
             'assessment_type': 'Quiz',
             'assessment_name': 'Quiz 1',
             'assessment_date': (date.today()).isoformat(),
@@ -100,7 +101,7 @@ class TestAssessmentSerializerValidation:
         """Adding weightage that pushes total over 100 must be rejected."""
         # existing assessment with 95 weightage
         Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Midterm',
             assessment_name='Midterm 1',
             assessment_date=date.today(),
@@ -119,7 +120,7 @@ class TestAssessmentSerializerValidation:
     def test_duplicate_assessment_name_rejected(self, faculty_user, course_allocation, db):
         """Same assessment_type + assessment_name for same allocation must be rejected."""
         Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Quiz',
             assessment_name='Quiz 1',
             assessment_date=date.today(),
@@ -186,7 +187,7 @@ class TestAssessmentSerializerValidation:
         course_allocation.status = 'Completed'
         course_allocation.save()
         assessment = Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Final',
             assessment_name='Final Exam',
             assessment_date=date.today(),
@@ -222,7 +223,7 @@ class TestAssessmentWeightageBugOnUpdate:
         double-counts the current value.
         """
         assessment = Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Quiz',
             assessment_name='Quiz 1',
             assessment_date=date.today(),
@@ -234,7 +235,7 @@ class TestAssessmentWeightageBugOnUpdate:
         # but bug makes it check 10 + 15 = 25 — still passes in this case
         # the bug is most visible when total is near 100
         Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Midterm',
             assessment_name='Midterm 1',
             assessment_date=date.today(),
@@ -277,7 +278,7 @@ class TestAssessmentCheckedSerializerValidation:
     ):
         """validate_obtained works correctly on update."""
         assessment = Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Quiz',
             assessment_name='Quiz 1',
             assessment_date=date.today(),
@@ -285,8 +286,8 @@ class TestAssessmentCheckedSerializerValidation:
             total_marks=20,
         )
         checked = AssessmentChecked.objects.create(
-            enrollment_id=enrollment,
-            assessment_id=assessment,
+            enrollment=enrollment,
+            assessment=assessment,
             obtained=None,
         )
         serializer = AssessmentCheckedSerializer(
@@ -356,7 +357,7 @@ class TestLectureSerializerValidation:
         assert serializer.is_valid(), serializer.errors
         lecture = serializer.save()
 
-        assert Attendance.objects.filter(lecture_id=lecture).count() == 1
+        assert Attendance.objects.filter(lecture=lecture).count() == 1
 
     def test_create_generates_sequential_lecture_numbers(
         self, faculty_user, course_allocation, enrollment, db
@@ -382,7 +383,7 @@ class TestLectureSerializerValidation:
             serializer.save()
 
         lectures = Lecture.objects.filter(
-            allocation_id=course_allocation
+            allocation=course_allocation
         ).order_by('lecture_no')
         numbers = list(lectures.values_list('lecture_no', flat=True))
         assert numbers == [1, 2, 3]
@@ -400,7 +401,7 @@ class TestLectureSerializerValidation:
         """
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
 
         data = {
@@ -450,9 +451,9 @@ class TestFacultyRequestsSerializer:
         """A confirmed request should allow status to be updated to 'applied'."""
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
-        Result.objects.get_or_create(enrollment_id=enrollment)
+        Result.objects.get_or_create(enrollment=enrollment)
 
         request = self._make_change_request(faculty_user, course_allocation, status='confirmed')
         serializer = FacultyRequestsSerializer(
@@ -490,18 +491,18 @@ class TestFacultyRequestsSerializer:
         """
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
 
         # set up results for all enrollments
-        result, _ = Result.objects.get_or_create(enrollment_id=enrollment)
+        result, _ = Result.objects.get_or_create(enrollment=enrollment)
         result.course_gpa = None
         result.obtained_marks = None
         result.save()
 
         # set up assessments with marks
         assessment = Assessment.objects.create(
-            allocation_id=course_allocation,
+            allocation=course_allocation,
             assessment_type='Final',
             assessment_name='Final Exam',
             assessment_date=date.today(),
@@ -509,8 +510,8 @@ class TestFacultyRequestsSerializer:
             total_marks=100,
         )
         checked = AssessmentChecked.objects.create(
-            enrollment_id=enrollment,
-            assessment_id=assessment,
+            enrollment=enrollment,
+            assessment=assessment,
             obtained=75,
         )
 

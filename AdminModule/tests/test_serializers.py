@@ -60,35 +60,35 @@ class TestClassSerializerCreate:
 
     def test_creates_class_with_correct_semester_count(self, admin_user, program):
         """Creating a class should auto-generate total_semesters semesters."""
-        data = {'program_id': program.program_id, 'batch_year': 2023}
+        data = {'program': program.program_id, 'batch_year': 2023}
         serializer = ClassSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
 
         new_class = serializer.save()
 
-        semesters = Semester.objects.filter(semesterdetails__class_id=new_class).distinct()
+        semesters = Semester.objects.filter(semesterdetails__student_class=new_class).distinct()
         assert semesters.count() == program.total_semesters
 
     def test_creates_semesterdetails_for_each_semester(self, admin_user, program):
         """Each auto-created semester should have a SemesterDetails row for this class."""
-        data = {'program_id': program.program_id, 'batch_year': 2024}
+        data = {'program': program.program_id, 'batch_year': 2024}
         serializer = ClassSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
 
         new_class = serializer.save()
 
-        details_count = SemesterDetails.objects.filter(class_id=new_class).count()
+        details_count = SemesterDetails.objects.filter(student_class=new_class).count()
         assert details_count == program.total_semesters
 
     def test_semester_numbers_are_sequential(self, admin_user, program):
         """Auto-created semesters should be numbered 1..N."""
-        data = {'program_id': program.program_id, 'batch_year': 2025}
+        data = {'program': program.program_id, 'batch_year': 2025}
         serializer = ClassSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
         new_class = serializer.save()
 
         numbers = sorted(
-            Semester.objects.filter(semesterdetails__class_id=new_class)
+            Semester.objects.filter(semesterdetails__student_class=new_class)
             .distinct()
             .values_list('semester_no', flat=True)
         )
@@ -97,9 +97,9 @@ class TestClassSerializerCreate:
     def test_scheme_of_studies_is_ignored_on_create(self, admin_user, program):
         """scheme_of_studies sent on create must be silently popped, not crash."""
         data = {
-            'program_id': program.program_id,
+            'program': program.program_id,
             'batch_year': 2026,
-            'scheme_of_studies': [{'semester_id': 999}],  # should be ignored
+            'scheme_of_studies': [{'semester': 999}],  # should be ignored
         }
         serializer = ClassSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
@@ -121,8 +121,8 @@ class TestClassSerializerUpdate:
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester_id': inactive_semester.semester_id,
-                    'semesterdetails_set': [{'course_code': course.course_code}],
+                    'semester': inactive_semester.semester_id,
+                    'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
         }
@@ -134,7 +134,7 @@ class TestClassSerializerUpdate:
         serializer.save()
 
         assert SemesterDetails.objects.filter(
-            semester_id=inactive_semester, course_code=course, class_id=batch_class
+            semester=inactive_semester, course=course,student_class=batch_class
         ).exists()
 
     def test_update_replaces_existing_courses(
@@ -145,14 +145,14 @@ class TestClassSerializerUpdate:
             course_code='OLD-001', course_name='Old Course', credit_hours=2, lab=False
         )
         SemesterDetails.objects.create(
-            semester_id=inactive_semester, class_id=batch_class, course_code=old_course
+            semester=inactive_semester, student_class=batch_class, course=old_course
         )
 
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester_id': inactive_semester.semester_id,
-                    'semesterdetails_set': [{'course_code': course.course_code}],
+                    'semester': inactive_semester.semester_id,
+                    'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
         }
@@ -164,8 +164,8 @@ class TestClassSerializerUpdate:
         serializer.save()
 
         # old course gone, new course present
-        assert not SemesterDetails.objects.filter(course_code=old_course).exists()
-        assert SemesterDetails.objects.filter(course_code=course).exists()
+        assert not SemesterDetails.objects.filter(course=old_course).exists()
+        assert SemesterDetails.objects.filter(course=course).exists()
 
     def test_update_with_invalid_semester_id_raises_404(
         self, admin_user, batch_class
@@ -175,8 +175,8 @@ class TestClassSerializerUpdate:
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester_id': 99999,
-                    'semesterdetails_set': [{'course_code': None}],
+                    'semester': 99999,
+                    'semesterdetails_set': [{'course': None}],
                 }
             ]
         }
@@ -245,11 +245,11 @@ class TestSemesterSerializerFieldGuards:
         """
         # link both semesters to same class
         SemesterDetails.objects.get_or_create(
-            semester_id=active_semester, class_id=batch_class,
+            semester=active_semester, student_class=batch_class,
             defaults={'course_code': None}
         )
         SemesterDetails.objects.get_or_create(
-            semester_id=inactive_semester, class_id=batch_class,
+            semester=inactive_semester, student_class=batch_class,
             defaults={'course_code': None}
         )
         data = {'activation_deadline': timezone.now() + timedelta(days=7)}
@@ -279,7 +279,7 @@ class TestCourseAllocationSerializer:
         """
         # inactive_semester fixture has session+activation_deadline set
         serializer = CourseAllocationSerializer(context=_ctx(admin_user))
-        qs = serializer.fields['semester_id'].queryset
+        qs = serializer.fields['semester'].queryset
         assert inactive_semester in qs
         assert active_semester not in qs
 
@@ -291,9 +291,9 @@ class TestCourseAllocationSerializer:
             course_code='CS-999', course_name='Unrelated', credit_hours=3, lab=False
         )
         data = {
-            'teacher_id': faculty_instance.pk,
-            'course_code': unrelated_course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.pk,
+            'course': unrelated_course.course_code,
+            'semester': inactive_semester.semester_id,
         }
         serializer = CourseAllocationSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
@@ -306,15 +306,12 @@ class TestCourseAllocationSerializer:
     ):
         """Duplicate teacher+course+semester allocation must be rejected."""
         data = {
-            'teacher_id': faculty_instance.pk,
-            'course_code': course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.pk,
+            'course': course.course_code,
+            'semester': inactive_semester.semester_id,
         }
         serializer = CourseAllocationSerializer(data=data, context=_ctx(admin_user))
-        assert serializer.is_valid(), serializer.errors
-        from rest_framework import serializers as drf_serializers
-        with pytest.raises(drf_serializers.ValidationError):
-            serializer.save()
+        assert not serializer.is_valid()
 
     def test_create_sets_session_from_semester(
         self, admin_user, faculty_instance, course, inactive_semester
@@ -322,14 +319,14 @@ class TestCourseAllocationSerializer:
         """The session field should be auto-filled from the semester's session."""
         # ensure course is in semester scheme
         SemesterDetails.objects.get_or_create(
-            semester_id=inactive_semester,
-            class_id=inactive_semester.semesterdetails_set.first().class_id,
-            course_code=course,
+            semester=inactive_semester,
+            student_class=inactive_semester.semesterdetails_set.first().student_class,
+            course=course,
         )
         data = {
-            'teacher_id': faculty_instance.pk,
-            'course_code': course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.pk,
+            'course': course.course_code,
+            'semester': inactive_semester.semester_id,
         }
         serializer = CourseAllocationSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
@@ -352,15 +349,15 @@ class TestEnrollmentSerializerQueryset:
         course_allocation.save()
 
         inactive_alloc = CourseAllocation.objects.create(
-            teacher_id=course_allocation.teacher_id,
-            course_code=course_allocation.course_code,
-            semester_id=course_allocation.semester_id,
+            faculty=course_allocation.faculty,
+            course=course_allocation.course,
+            semester=course_allocation.semester,
             session='Spring-2025',
             status='Inactive',
         )
 
         serializer = EnrollmentSerializer(context=_ctx(admin_user))
-        qs = serializer.fields['allocation_id'].queryset
+        qs = serializer.fields['allocation'].queryset
 
         assert course_allocation in qs
         assert inactive_alloc not in qs
@@ -371,7 +368,7 @@ class TestEnrollmentSerializerQueryset:
         course_allocation.save()
 
         serializer = EnrollmentSerializer(context=_ctx(admin_user))
-        qs = serializer.fields['allocation_id'].queryset
+        qs = serializer.fields['allocation'].queryset
         assert qs.count() == 0
 
 
@@ -468,7 +465,7 @@ class TestBulkTranscriptSerializer:
         from rest_framework import serializers as drf_serializers
         with pytest.raises(drf_serializers.ValidationError) as exc_info:
             serializer.save()
-        assert enrollment.student_id.student_id.person_id in str(exc_info.value.detail)
+        assert enrollment.student.student_id.person_id in str(exc_info.value.detail)
 
     def test_zero_credits_causes_division_by_zero(
         self, admin_user, active_semester, student_instance, course_allocation, enrollment, db
@@ -478,17 +475,17 @@ class TestBulkTranscriptSerializer:
         gpa = gpa/total_credits_attempted raises ZeroDivisionError.
         This test documents the bug — it should be a 400, not a 500.
         """
-        course_allocation.semester_id = active_semester
+        course_allocation.semester = active_semester
         course_allocation.status = 'Completed'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.status = 'Completed'
         enrollment.save()
         enrollment.result.course_gpa = Decimal('3.5')
         enrollment.result.save()
 
         # set course credit_hours to 0 to trigger division by zero
-        course = course_allocation.course_code
+        course = course_allocation.course
         course.credit_hours = 0
         course.save()
 
@@ -544,7 +541,7 @@ class TestFacultyStudentBulkSerializerValidation:
         """
         csv_content = (
             'password,first_name,last_name,father_name,gender,cnic,dob,'
-            'contact_number,institutional_email,department_id,designation,joining_date\n'
+            'contact_number,institutional_email,department,designation,joining_date\n'
             'pass123,John,Doe,Father,Male,12345-1234567-9,1990-01-01,'
             '+923001111111,bulk_faculty@test.com,CS,Lecturer,2024-01-01\n'
         )

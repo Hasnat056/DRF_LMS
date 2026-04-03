@@ -10,9 +10,6 @@ class IsSuperUserOrAdminPermission(permissions.BasePermission):
             return False
         return False
 
-    def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
-
 
 class AdminPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -23,10 +20,10 @@ class AdminPermissions(permissions.BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
-        if request.user.is_authenticated:
-            if request.user.groups.filter(name='Admin').exists():
-                return request.user == obj.employee_id.user
-            return False
+        if request.user.is_superuser:
+            return True
+        if request.user.groups.filter(name='Admin').exists():
+            return request.user == obj.employee_id.user
         return False
 
 
@@ -34,10 +31,13 @@ class AdminPermissions(permissions.BasePermission):
 class ChangeRequestPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.user.is_authenticated:
-            if request.user.is_superuser or request.user.groups.filter(name='Admin').exists():
-                return request.method == 'GET' or request.method == 'PUT' or request.method == 'PATCH'
+            if request.user.is_superuser:
+                    return True
+            if request.user.groups.filter(name='Admin').exists():
+                return request.method in ['GET', 'PUT', 'PATCH']
             return False
         return False
+
     def has_object_permission(self, request, view, obj):
         if obj.requested_by == request.user:
             if obj.status == 'Applied':
@@ -52,10 +52,8 @@ class DepartmentPermissions(permissions.BasePermission):
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():
-                return request.method == 'GET' or request.method == 'PUT' or request.method == 'PATCH'
+                return request.method in ['GET', 'PUT', 'PATCH']
         return False
-    def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
 
 
 class AdminCourseAllocationPermissions(permissions.BasePermission):
@@ -64,9 +62,9 @@ class AdminCourseAllocationPermissions(permissions.BasePermission):
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():
-                queryset = Semester.objects.filter(status='Inactive',session__isnull=False, activation_deadline__isnull=False)
-                if queryset.exists():
-                    return True
+                queryset = Semester.objects.filter(status='Inactive',session__isnull=False, activation_deadline__isnull=False).exists()
+                if queryset:
+                    return request.method in ['GET', 'POST', 'DELETE']
                 else:
                     return request.method == 'GET'
 
@@ -91,7 +89,7 @@ class AdminEnrollmentPermissions(permissions.BasePermission):
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():
-                queryset = CourseAllocation.objects.filter(status='Ongoing')
+                queryset = CourseAllocation.objects.filter(status='Ongoing').exists()
                 if queryset:
                     return True
                 else:

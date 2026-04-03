@@ -348,29 +348,23 @@ class StudentEnrollmentCreateSerializerB(serializers.Serializer):
         ]
 
     def create(self, validated_data):
-        print(validated_data)
         if not validated_data:
             return None
-        request = self.context.get('request')
         count = 0
-        if request:
-            student = Student.objects.get(student_id__user=request.user)
+        return_id = None
+        request = self.context.get('request')
+        student = request.student
+        allocation_ids = self.context.get('allocation_ids')
+        enrolled_allocation_ids = self.context.get('enrolled_allocation_ids')
+        if validated_data['allocation_id'] in allocation_ids:
+            if validated_data['allocation_id'] in enrolled_allocation_ids and not validated_data['confirm']:
+                Enrollment.objects.get(allocation_id=validated_data['allocation_id'], student=student).delete()
+                count = -1
+            if validated_data['allocation_id'] not in enrolled_allocation_ids and validated_data['confirm']:
+                Enrollment.objects.create(allocation_id=validated_data['allocation_id'], student=student)
+                count = 1
+            return_id = validated_data['allocation_id']
 
-            semester = Semester.objects.filter(semesterdetails__class_=student.class_, status='Inactive',
-                                           session__isnull=False, activation_deadline__isnull=False).prefetch_related('courseallocation_set').first()
+        return {'count': count, 'allocation_id': return_id}
 
-            if not semester:
-                raise serializers.ValidationError('No upcoming semester found for your class')
 
-            allocation_ids = semester.courseallocation_set.all().values_list('allocation_id', flat=True)
-            if validated_data['allocation_id'] in allocation_ids and validated_data['confirm']==True:
-                count += 1
-                enrollment = Enrollment.objects.filter(allocation=validated_data['allocation_id'], student=student).first()
-                if not enrollment:
-                    Enrollment.objects.create(allocation=semester.courseallocation_set.filter(allocation_id=validated_data['allocation_id']).first(), student=student)
-
-            elif validated_data['allocation_id'] in allocation_ids and validated_data['confirm']==False:
-                enrollment = Enrollment.objects.filter(allocation_id=validated_data['allocation_id'],student=student).first()
-                if enrollment:
-                    enrollment.delete()
-            return {'count': count}

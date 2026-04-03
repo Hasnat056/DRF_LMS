@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.shortcuts import get_list_or_404
@@ -83,7 +83,7 @@ class AssessmentCheckedSerializer(serializers.ModelSerializer):
                 'image' : request.build_absolute_uri(obj.enrollment.student.student_id.image.url) if obj.enrollment.student.student_id.image else None,
                 'student_id' : obj.enrollment.student.student_id.person_id,
                 'first_name' : obj.enrollment.student.student_id.first_name,
-                'last_name' : obj.enrollment_id.student_id.student_id.last_name,
+                'last_name' : obj.enrollment.student.student_id.last_name,
             }
         return None
 
@@ -113,7 +113,7 @@ class AssessmentHyperlinkedIdentityField(serializers.HyperlinkedIdentityField):
         if obj.allocation is None:
             return None
         kwargs = {
-            'allocation': obj.allocation.pk,
+            'allocation_id': obj.allocation.pk,
             'assessment_id': getattr(obj, self.lookup_field)
         }
         return self.reverse(view_name, kwargs=kwargs, request=request, format=format)
@@ -142,25 +142,24 @@ class AssessmentSerializer(serializers.ModelSerializer):
             'assessmentchecked_set'
         ]
         extra_kwargs = {
-            'allocation_id': {'read_only': True},
+            'allocation': {'read_only': True},
         }
 
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Assessment):
-            extra_kwargs = {
-                'allocation' : {'read_only': True},
-                'assessment_type' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'assessment_name' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'assessment_date' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'weightage' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'total_marks' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'student_submission' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'submission_deadline' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-                'assessmentchecked_set' : {'read_only': True} if self.instance.allocation.status == 'Completed' else {'read_only': False},
-            }
+            is_completed = self.instance.allocation.status == 'Completed'
+            read_only_fields = [
+                'assessment_type', 'assessment_name', 'assessment_date',
+                'weightage', 'total_marks', 'student_submission',
+                'submission_deadline', 'assessmentchecked_set',
+            ]
+            for field in read_only_fields:
+                extra_kwargs[field] = {'read_only': is_completed}
+            extra_kwargs['allocation'] = {'read_only': True}
 
         return extra_kwargs
+
 
 
     def validate_submission_deadline(self, value):

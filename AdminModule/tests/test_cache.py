@@ -136,7 +136,7 @@ class TestFacultyListCache:
         assert cache.get(dept_key) is not None
 
         response = admin_client.get(
-            f'{ADMIN}/faculty/?department_id={department.department_id}'
+            f'{ADMIN}/faculty/?department={department.department_id}'
         )
         assert response.status_code == 200
 
@@ -178,7 +178,7 @@ class TestFacultyListCache:
                 'contact_number': '+923001234567',
                 'institutional_email': 'new.faculty@test.com',
             },
-            'department_id': department.department_id,
+            'department': department.department_id,
             'designation': 'Lecturer',
             'joining_date': '2024-01-01',
         }, format='json')
@@ -223,7 +223,7 @@ class TestStudentListCache:
         key = f'admin:students:program:{program.program_id}'
         assert cache.get(key) is not None
 
-        response = admin_client.get(f'{ADMIN}/students/?program_id={program.program_id}')
+        response = admin_client.get(f'{ADMIN}/students/?program={program.program_id}')
         assert response.status_code == 200
 
     def test_class_filter_uses_class_cache_key(
@@ -233,7 +233,7 @@ class TestStudentListCache:
         key = f'admin:students:class:{batch_class.class_id}'
         assert cache.get(key) is not None
 
-        response = admin_client.get(f'{ADMIN}/students/?class_id={batch_class.class_id}')
+        response = admin_client.get(f'{ADMIN}/students/?student_class={batch_class.class_id}')
         assert response.status_code == 200
 
     def test_department_filter_uses_department_cache_key(
@@ -244,7 +244,7 @@ class TestStudentListCache:
         assert cache.get(key) is not None
 
         response = admin_client.get(
-            f'{ADMIN}/students/?program_id__department_id={department.department_id}'
+            f'{ADMIN}/students/?program__department={department.department_id}'
         )
         assert response.status_code == 200
 
@@ -282,7 +282,7 @@ class TestStudentListCache:
         assert cache.get(correct_key) is not None or cache.get(buggy_key) is not None
 
         response = admin_client.get(
-            f'{ADMIN}/students/?program_id__department_id={dept_id}&status={status}'
+            f'{ADMIN}/students/?program__department={dept_id}&status={status}'
         )
         # Request succeeds but likely falls back to DB due to key mismatch
         assert response.status_code == 200
@@ -330,7 +330,7 @@ class TestProgramsListCache:
 
         # this should fall back to DB gracefully but currently crashes with 500
         response = admin_client.get(
-            f'{ADMIN}/programs/?department_id={department.department_id}'
+            f'{ADMIN}/programs/?department={department.department_id}'
         )
         # document the bug: currently returns 500, should be 200
         assert response.status_code in (200, 500), (
@@ -407,7 +407,7 @@ class TestSemestersListCache:
         assert cache.get(key) is not None
 
         response = admin_client.get(
-            f'{ADMIN}/semesters/?semesterdetails__class_id={batch_class.class_id}'
+            f'{ADMIN}/semesters/?semesterdetails__student_class={batch_class.class_id}'
         )
         assert response.status_code == 200
 
@@ -424,7 +424,7 @@ class TestSemestersListCache:
         """
         admin_client.get(f'{ADMIN}/semesters/')
         response = admin_client.get(
-            f'{ADMIN}/semesters/?semesterdetails__class_id={batch_class.class_id}'
+            f'{ADMIN}/semesters/?semesterdetails__student_class={batch_class.class_id}'
         )
         assert response.status_code == 200
 
@@ -454,7 +454,7 @@ class TestAllocationsListCache:
         cache.delete(key)
 
         # trigger cache population
-        admin_client.get(f'{ADMIN}/allocations/?semester_id={inactive_semester.semester_id}')
+        admin_client.get(f'{ADMIN}/allocations/?semester={inactive_semester.semester_id}')
         # task fires on miss — cache should be populated after
         assert cache.get(key) is not None
 
@@ -465,7 +465,7 @@ class TestAllocationsListCache:
         cache.delete(key)
 
         admin_client.get(
-            f'{ADMIN}/allocations/?teacher_id={faculty_instance.employee_id.person_id}'
+            f'{ADMIN}/allocations/?faculty={faculty_instance.employee_id.person_id}'
         )
         assert cache.get(key) is not None
 
@@ -487,7 +487,7 @@ class TestAllocationsListCache:
         cache.set(key, [])  # force cache hit with empty list
 
         response = admin_client.get(
-            f'{ADMIN}/allocations/?semester_id={inactive_semester.semester_id}'
+            f'{ADMIN}/allocations/?semester={inactive_semester.semester_id}'
         )
         assert response.status_code == 200
 
@@ -497,14 +497,14 @@ class TestAllocationsListCache:
         """Creating an allocation must refresh cache."""
         from Models.models import SemesterDetails
         SemesterDetails.objects.get_or_create(
-            semester_id=inactive_semester,
-            class_id=inactive_semester.semesterdetails_set.first().class_id,
-            course_code=course,
+            semester=inactive_semester,
+            student_class=inactive_semester.semesterdetails_set.first().student_class,
+            course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
-            'teacher_id': faculty_instance.employee_id.person_id,
-            'course_code': course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.employee_id.person_id,
+            'course': course.course_code,
+            'semester': inactive_semester.semester_id,
         }, format='json')
 
         if response.status_code == 201:
@@ -526,7 +526,7 @@ class TestEnrollmentsListCache:
         cache.delete(key)
 
         admin_client.get(
-            f'{ADMIN}/enrollments/?student_id={student_instance.student_id.person_id}'
+            f'{ADMIN}/enrollments/?student={student_instance.student_id.person_id}'
         )
         assert cache.get(key) is not None
 
@@ -537,7 +537,7 @@ class TestEnrollmentsListCache:
         cache.delete(key)
 
         admin_client.get(
-            f'{ADMIN}/enrollments/?allocation_id__teacher_id={faculty_instance.employee_id.person_id}'
+            f'{ADMIN}/enrollments/?allocation__faculty={faculty_instance.employee_id.person_id}'
         )
         assert cache.get(key) is not None
 
@@ -558,7 +558,7 @@ class TestEnrollmentsListCache:
         cache.set(key, [])  # force cache hit
 
         response = admin_client.get(
-            f'{ADMIN}/enrollments/?student_id={student_instance.student_id.person_id}'
+            f'{ADMIN}/enrollments/?student={student_instance.student_id.person_id}'
         )
         assert response.status_code == 200
 
@@ -570,8 +570,8 @@ class TestEnrollmentsListCache:
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {
-            'student_id': student_instance.pk,
-            'allocation_id': course_allocation.allocation_id,
+            'student': student_instance.pk,
+            'allocation': course_allocation.allocation_id,
         }, format='json')
 
         if response.status_code == 201:

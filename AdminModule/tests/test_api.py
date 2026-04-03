@@ -43,20 +43,20 @@ class TestClassAPICreate:
     def test_create_class_auto_generates_semesters(self, admin_client, program):
         """POST /classes/ should auto-create N semesters for the program."""
         response = admin_client.post(f'{ADMIN}/classes/', {
-            'program_id': program.program_id,
+            'program': program.program_id,
             'batch_year': 2023,
         }, format='json')
         assert response.status_code == 201
 
-        new_class = Class.objects.get(program_id=program, batch_year=2023)
+        new_class = Class.objects.get(program=program, batch_year=2023)
         sem_count = Semester.objects.filter(
-            semesterdetails__class_id=new_class
+            semesterdetails__student_class=new_class
         ).distinct().count()
         assert sem_count == program.total_semesters
 
     def test_create_class_returns_class_id(self, admin_client, program):
         response = admin_client.post(f'{ADMIN}/classes/', {
-            'program_id': program.program_id,
+            'program': program.program_id,
             'batch_year': 2029,
         }, format='json')
         assert response.status_code == 201
@@ -80,8 +80,8 @@ class TestClassAPIRetrieve:
     ):
         """scheme_of_studies must contain semesterdetails_set with course info."""
         SemesterDetails.objects.filter(
-            semester_id=inactive_semester, class_id=batch_class
-        ).update(course_code=course)
+            semester=inactive_semester, student_class=batch_class
+        ).update(course=course)
 
         url = reverse('Admin:class-detail', kwargs={'class_id': batch_class.class_id})
         response = admin_client.get(url)
@@ -100,7 +100,7 @@ class TestClassAPIRetrieve:
         self, admin_client, program, db
     ):
         """A class with no SemesterDetails should return scheme_of_studies=None."""
-        bare_class = Class.objects.create(program_id=program, batch_year=2030)
+        bare_class = Class.objects.create(program=program, batch_year=2030)
         url = reverse('Admin:class-detail', kwargs={'class_id': bare_class.class_id})
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -118,14 +118,14 @@ class TestClassAPIUpdate:
         response = admin_client.patch(url, {
             'scheme_of_studies': [
                 {
-                    'semester_id': inactive_semester.semester_id,
-                    'semesterdetails_set': [{'course_code': course.course_code}],
+                    'semester': inactive_semester.semester_id,
+                    'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
         }, format='json')
         assert response.status_code == 200
         assert SemesterDetails.objects.filter(
-            semester_id=inactive_semester, course_code=course, class_id=batch_class
+            semester=inactive_semester, course=course, student_class=batch_class
         ).exists()
 
     def test_update_without_scheme_of_studies_returns_400(
@@ -190,12 +190,13 @@ class TestSemesterAPIActivationDeadline:
         """If the class already has an Active semester, setting activation_deadline should fail."""
         # make sure both semesters are linked to same class
         SemesterDetails.objects.get_or_create(
-            semester_id=active_semester, class_id=batch_class,
-            defaults={'course_code': None}
+            semester=active_semester, student_class=batch_class,
+            defaults={'course': None}
         )
         url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
         future = (timezone.now() + timedelta(days=7)).isoformat()
         response = admin_client.patch(url, {'activation_deadline': future}, format='json')
+        print(response)
         assert response.status_code == 400
 
 
@@ -209,9 +210,9 @@ class TestSemesterAPIClosingDeadline:
         PATCH closing_deadline must return 400 if any enrollment
         has no course_gpa — results must be complete first.
         """
-        course_allocation.semester_id = active_semester
+        course_allocation.semester = active_semester
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.save()
         enrollment.result.course_gpa = None
         enrollment.result.save()
@@ -235,14 +236,14 @@ class TestAllocationAPICreate:
         """Allocation creation with valid semester+course should return 201."""
         # ensure course is in semester scheme
         SemesterDetails.objects.get_or_create(
-            semester_id=inactive_semester,
-            class_id=inactive_semester.semesterdetails_set.first().class_id,
-            course_code=course,
+            semester=inactive_semester,
+            student_class=inactive_semester.semesterdetails_set.first().student_class,
+            course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
-            'teacher_id': faculty_instance.employee_id.person_id,
-            'course_code': course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.employee_id.person_id,
+            'course': course.course_code,
+            'semester': inactive_semester.semester_id,
         }, format='json')
         assert response.status_code == 201
 
@@ -254,9 +255,9 @@ class TestAllocationAPICreate:
         so creating an allocation against one should be rejected.
         """
         response = admin_client.post(f'{ADMIN}/allocations/', {
-            'teacher_id': faculty_instance.employee_id.person_id,
-            'course_code': course.course_code,
-            'semester_id': active_semester.semester_id,
+            'faculty': faculty_instance.employee_id.person_id,
+            'course': course.course_code,
+            'semester': active_semester.semester_id,
         }, format='json')
         # queryset filter means the FK validation itself rejects this
         assert response.status_code == 403
@@ -269,9 +270,9 @@ class TestAllocationAPICreate:
             course_code='XX-999', course_name='Unrelated', credit_hours=2, lab=False
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
-            'teacher_id': faculty_instance.employee_id.person_id,
-            'course_code': unrelated.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.employee_id.person_id,
+            'course': unrelated.course_code,
+            'semester': inactive_semester.semester_id,
         }, format='json')
         assert response.status_code == 400
 
@@ -280,14 +281,14 @@ class TestAllocationAPICreate:
     ):
         """Second identical allocation must return 400."""
         SemesterDetails.objects.get_or_create(
-            semester_id=inactive_semester,
-            class_id=inactive_semester.semesterdetails_set.first().class_id,
-            course_code=course,
+            semester=inactive_semester,
+            student_class=inactive_semester.semesterdetails_set.first().student_class,
+            course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
-            'teacher_id': faculty_instance.employee_id.person_id,
-            'course_code': course.course_code,
-            'semester_id': inactive_semester.semester_id,
+            'faculty': faculty_instance.employee_id.person_id,
+            'course': course.course_code,
+            'semester': inactive_semester.semester_id,
         }, format='json')
         assert response.status_code == 400
 
@@ -307,8 +308,8 @@ class TestEnrollmentAPICreate:
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {
-            'student_id': student_instance.pk,
-            'allocation_id': course_allocation.allocation_id,
+            'student': student_instance.pk,
+            'allocation': course_allocation.allocation_id,
         }, format='json')
         assert response.status_code == 403
 
@@ -320,8 +321,8 @@ class TestEnrollmentAPICreate:
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {
-            'student_id': student_instance.pk,
-            'allocation_id': course_allocation.allocation_id,
+            'student': student_instance.pk,
+            'allocation': course_allocation.allocation_id,
         }, format='json')
         assert response.status_code == 403
 
@@ -333,14 +334,14 @@ class TestEnrollmentAPICreate:
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {
-            'student_id': student_instance.pk,
-            'allocation_id': course_allocation.allocation_id,
+            'student': student_instance.pk,
+            'allocation': course_allocation.allocation_id,
         }, format='json')
         assert response.status_code == 201
         enrollment = Enrollment.objects.get(
-            student_id=student_instance, allocation_id=course_allocation
+            student=student_instance, allocation=course_allocation
         )
-        assert Result.objects.filter(enrollment_id=enrollment).exists()
+        assert Result.objects.filter(enrollment=enrollment).exists()
 
 
 # ===========================================================================
@@ -368,7 +369,7 @@ class TestBulkAPI:
         """
         csv_content = (
             'password,first_name,last_name,father_name,gender,cnic,dob,'
-            'contact_number,institutional_email,department_id,designation,joining_date\n'
+            'contact_number,institutional_email,department,designation,joining_date\n'
             'pass123,Jane,Smith,Father,Female,12345-9876543-2,1985-06-15,'
             '+923002222222,bulk.jane@test.com,CS,Lecturer,2024-01-01\n'
         )

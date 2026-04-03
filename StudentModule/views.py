@@ -76,7 +76,7 @@ class StudentDashboardView(
         student_data['first_name'] = student.student_id.first_name
         student_data['last_name'] = student.student_id.last_name
         student_data['institutional_email'] = student.student_id.institutional_email
-        student_data['class'] = f'{student.class_.program.program_id}-{student.class_.batch_year}'
+        student_data['class'] = f'{student.student_class.program.program_id}-{student.student_class.batch_year}'
         student_data['program'] = student.program.program_name
         student_data['department'] = student.program.department.department_name
         student_data['image'] = request.build_absolute_uri(student.student_id.image.url) if student.student_id.image else None
@@ -174,31 +174,48 @@ class StudentEnrollmentCreateAPIView(
 ):
     def get(self,request):
         student = request.student
-        student_cache_key = f'enrollments:{student.student_id}:{student.class_id}:data'
+        student_cache_key = f'enrollments:{student.student_id}:{student.student_class_id}:data'
         student_data = cache.get(student_cache_key)
         if student_data:
             return Response(data=student_data, status=status.HTTP_200_OK)
 
-        cache_key = f'enrollments:{student.class_id}:semester:allocations'
+        cache_key = f'enrollments:{student.student_class_id}:semester:allocations'
         allocation_data = cache.get(cache_key)
-        enrolled_allocations = Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True)
-        for key, value in enrolled_allocations:
-            value['confirm'] = key in enrolled_allocations
+        enrolled_allocations = set(Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True))
+        for each in allocation_data:
+            each['confirm'] = each['allocation_id'] in enrolled_allocations
 
         cache.set(student_cache_key, allocation_data, None)
 
         return Response(data=allocation_data, status=status.HTTP_200_OK)
 
     def post(self, request):
+        request_data = request.data if isinstance(request.data, list) else [request.data]
         count = 0
-        for each in request.data:
-            serializer = StudentEnrollmentCreateSerializerB(data=each, context={'request': request})
+        student_cache_data = []
+        student = request.student
+        cache_key = f'enrollments:{student.student_class_id}:semester:allocations'
+        data = cache.get(cache_key)
+        allocation_ids = {each['allocation_id'] for each in data}
+
+        enrolled_allocations_id = set(Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True))
+        for each in request_data:
+            serializer = StudentEnrollmentCreateSerializerB(
+                data=each,
+                context={'request': request, 'allocation_ids': allocation_ids, 'enrolled_allocations_ids': enrolled_allocations_id}
+            )
             if serializer.is_valid():
                 instance = serializer.save()
                 if isinstance(instance, dict):
-                    count += instance.get('count')
+                    return_count = instance.get('count')
+                    count += return_count if return_count!=-1 else 0
+                    return_id = instance.get('return_id')
+                    if return_id and return_count >= 0:
+                        student_cache_data.append(each)
 
-        return Response(data={'message': f'{count} courses enrolled successfully'}, status=status.HTTP_200_OK)
+        student_cache_key = f'enrollments:{student.student_id}:{student.student_class_id}:data'
+        cache.set(student_cache_key, student_cache_data, timeout=None)
+        return Response(data={'message': f'{count} courses enrolled successfully'}, status=status.HTTP_201_CREATED)
 
 
 class ReviewListAPIView(
@@ -254,10 +271,12 @@ class StudentCompilerAPIView(APIView):
                 'C / C++' : 'gcc and g++',
             }
         }
-        return Response(data)
+        return Response(data=data, status=status.HTTP_200_OK)
+
+
     def post(self, request, *args, **kwargs):
         if 'file' in request.data and request.data['file'] == '':
-            return Response(data={'error': 'Please provide a file'}, status=400)
+            return Response(data={'error': 'Please provide a file'}, status=status.HTTP_400_BAD_REQUEST)
 
         data = request.data.copy()
         data['input_list'] = request.data.get('input_list')

@@ -100,7 +100,7 @@ class Migration(migrations.Migration):
             name='Admin',
             fields=[
                 ('employee_id', models.OneToOneField(on_delete=django.db.models.deletion.RESTRICT, primary_key=True, serialize=False, to='Models.person')),
-                ('joining_date', models.DateField(blank=True, default=Models.models.current_time)),
+                ('joining_date', models.DateField(blank=True, default=Models.models.current_date)),
                 ('leaving_date', models.DateField(blank=True, null=True)),
                 ('office_location', models.CharField(blank=True, max_length=100, null=True)),
                 ('marital_status', models.CharField(blank=True, choices=[('Single', 'Single'), ('Married', 'Married'), ('Divorced', 'Divorced'), ('Widowed', 'Widowed')], max_length=10, null=True)),
@@ -127,7 +127,7 @@ class Migration(migrations.Migration):
                 ('audit_id', models.AutoField(primary_key=True, serialize=False)),
                 ('action_type', models.CharField(max_length=10)),
                 ('entity_name', models.CharField(max_length=50)),
-                ('time_stamp', models.DateTimeField(db_index=True, default=Models.models.current_time)),
+                ('time_stamp', models.DateTimeField(db_index=True, default=Models.models.current_date)),
                 ('ip_address', models.CharField(max_length=45)),
                 ('user_agent', models.CharField(max_length=255)),
                 ('old_value', models.JSONField(blank=True, null=True)),
@@ -247,7 +247,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('employee_id', models.OneToOneField(on_delete=django.db.models.deletion.RESTRICT, primary_key=True, serialize=False, to='Models.person')),
                 ('designation', models.CharField(choices=[('Lab Engineer', 'Lab Engineer'), ('Lecturer', 'Lecturer'), ('Senior Lecturer', 'Senior Lecturer'), ('Associate Professor', 'Associate Professor'), ('Assistant Professor', 'Assistant Professor'), ('Professor', 'Professor')], db_index=True, max_length=20)),
-                ('joining_date', models.DateField(blank=True, default=Models.models.current_time)),
+                ('joining_date', models.DateField(blank=True, default=Models.models.current_date)),
                 ('department', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='Models.department')),
             ],
             options={
@@ -269,7 +269,7 @@ class Migration(migrations.Migration):
             name='Student',
             fields=[
                 ('student_id', models.OneToOneField(on_delete=django.db.models.deletion.RESTRICT, primary_key=True, serialize=False, to='Models.person')),
-                ('admission_date', models.DateField(blank=True, default=Models.models.current_time)),
+                ('admission_date', models.DateField(blank=True, default=Models.models.current_date)),
                 ('status', models.CharField(choices=[('Active', 'Active'), ('Dropped', 'Dropped'), ('Frozen', 'Frozen'), ('Graduated', 'Graduated'), ('On Probation', 'On Probation')], db_column='status', db_index=True, default='Active', max_length=12)),
                 ('program', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='Models.program')),
                 ('student_class', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='Models.class')),
@@ -283,7 +283,7 @@ class Migration(migrations.Migration):
             name='Enrollment',
             fields=[
                 ('enrollment_id', models.AutoField(primary_key=True, serialize=False)),
-                ('enrollment_date', models.DateTimeField(default=Models.models.current_time)),
+                ('enrollment_date', models.DateTimeField(default=Models.models.current_date)),
                 ('status', models.CharField(choices=[('Inactive', 'Inactive'), ('Active', 'Active'), ('Completed', 'Completed'), ('Dropped', 'Dropped')], db_index=True, default='Inactive', max_length=9)),
                 ('allocation', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='Models.courseallocation')),
                 ('student', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='Models.student')),
@@ -363,7 +363,7 @@ class Migration(migrations.Migration):
                 ('review_id', models.AutoField(primary_key=True, serialize=False)),
                 ('review_text', models.TextField(blank=True, null=True)),
                 ('rating', models.DecimalField(decimal_places=2, max_digits=4)),
-                ('create_date', models.DateTimeField(db_column='createdAt', default=Models.models.current_time)),
+                ('create_date', models.DateTimeField(db_column='createdAt', default=Models.models.current_date)),
                 ('enrollment', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='Models.enrollment')),
             ],
             options={

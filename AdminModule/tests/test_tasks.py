@@ -131,14 +131,14 @@ class TestSemesterActivationTask:
             course_code='CS-202', course_name='Data Structures', credit_hours=3, lab=False
         )
         SemesterDetails.objects.create(
-            semester_id=inactive_semester,
-            class_id=inactive_semester.semesterdetails_set.first().class_id,
-            course_code=course2,
+            semester=inactive_semester,
+            student_class=inactive_semester.semesterdetails_set.first().student_class,
+            course=course2,
         )
         alloc2 = CourseAllocation.objects.create(
-            teacher_id=faculty_instance,
-            course_code=course2,
-            semester_id=inactive_semester,
+            faculty=faculty_instance,
+            course=course2,
+            semester=inactive_semester,
             session=inactive_semester.session,
             status='Inactive',
         )
@@ -175,7 +175,7 @@ class TestSemesterClosingTask:
 
     def test_cascades_allocations_to_completed(self, active_semester, course_allocation):
         """Allocations must become Completed when semester closes."""
-        course_allocation.semester_id = active_semester
+        course_allocation.semester = active_semester
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
@@ -187,10 +187,10 @@ class TestSemesterClosingTask:
         self, active_semester, course_allocation, enrollment
     ):
         """Enrollments must become Completed when semester closes."""
-        course_allocation.semester_id = active_semester
+        course_allocation.semester = active_semester
         course_allocation.status = 'Ongoing'
         course_allocation.save()
-        enrollment.allocation_id = course_allocation
+        enrollment.allocation = course_allocation
         enrollment.status = 'Active'
         enrollment.save()
 
@@ -206,7 +206,7 @@ class TestSemesterClosingTask:
         Completed allocations must NOT appear in the Ongoing queryset,
         so no new enrollments can be created.
         """
-        course_allocation.semester_id = active_semester
+        course_allocation.semester = active_semester
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 

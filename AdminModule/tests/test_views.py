@@ -86,7 +86,7 @@ class TestFacultyListCreate:
                 "contact_number": "+923009999991",
                 "institutional_email": "newfaculty@test.com",
             },
-            "department_id": department.department_id,
+            "department": department.department_id,
             "designation": "Lecturer",
             "joining_date": "2024-01-01",
         }
@@ -114,14 +114,14 @@ class TestFacultyRoleBasedFieldMutation:
 
     def test_faculty_cannot_change_own_department(self, faculty_client, faculty_instance):
         pk = faculty_instance.employee_id.person_id
-        original_dept = faculty_instance.department_id_id
+        original_dept = faculty_instance.department_id
         faculty_client.patch(
             reverse('Admin:faculty-detail', kwargs={'employee_id': pk}),
-            {"department_id": "EE"},
+            {"department": "EE"},
             format='json'
         )
         faculty_instance.refresh_from_db()
-        assert faculty_instance.department_id_id == original_dept
+        assert faculty_instance.department_id == original_dept
 
     def test_faculty_cannot_change_protected_person_fields(self, faculty_client, faculty_instance):
         pk = faculty_instance.employee_id.person_id
@@ -223,8 +223,8 @@ class TestEnrollmentPermissions:
         course_allocation.status = 'Ongoing'
         course_allocation.save()
         response = admin_client.post(f'{ADMIN}/enrollments/', {
-            "student_id": student_instance.pk,
-            "allocation_id": course_allocation.allocation_id,
+            "student": student_instance.pk,
+            "allocation": course_allocation.allocation_id,
         }, format='json')
         assert response.status_code == 201
 

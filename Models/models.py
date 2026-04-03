@@ -2,12 +2,11 @@ import uuid
 
 from django.db import models
 from django.contrib.auth.models import User
-from datetime import  datetime
 from django.utils import timezone
 from django.db.models import CheckConstraint, Q
 
 
-def current_time():
+def current_date():
     return timezone.now().date()
 
 
@@ -89,7 +88,7 @@ class Semester(models.Model):
         ordering = ['semester_id', 'status']
 
     def __str__(self):
-        class_id = self.semesterdetails_set.values_list('class_id', flat=True).first()
+        class_id = self.semesterdetails_set.values_list('student_class', flat=True).first()
         if class_id:
             class_object = Class.objects.get(class_id=class_id)
             class_name = f'{class_object.program.program_id} {class_object.batch_year}'
@@ -258,7 +257,7 @@ class Enrollment(models.Model):
     enrollment_id = models.AutoField(primary_key=True)
     student = models.ForeignKey('Student', on_delete=models.RESTRICT, db_index=True)
     allocation = models.ForeignKey('CourseAllocation', on_delete=models.RESTRICT)
-    enrollment_date = models.DateTimeField(default=current_time)
+    enrollment_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=9, default='Inactive', choices=STATUS_CHOICES, db_index=True)
 
     class Meta:
@@ -275,7 +274,7 @@ class Reviews(models.Model):
     enrollment = models.ForeignKey('Enrollment', on_delete=models.CASCADE)
     review_text = models.TextField(blank=True, null=True)
     rating = models.DecimalField(max_digits=4, decimal_places=2)
-    create_date = models.DateTimeField(db_column='createdAt', default=current_time)
+    timestamp = models.DateTimeField(db_column='createdAt', auto_now_add=True)
 
     class Meta:
         db_table = 'reviews'
@@ -382,7 +381,7 @@ class Admin(models.Model):
         ('Widowed', 'Widowed'),
     ]
     employee_id = models.OneToOneField(Person, on_delete=models.RESTRICT, primary_key=True)
-    joining_date = models.DateField(blank=True, default=current_time)
+    joining_date = models.DateField(blank=True, default=current_date)
     leaving_date = models.DateField(blank=True, null=True)
     office_location = models.CharField( max_length=100, blank=True, null=True)
     marital_status = models.CharField(choices=MARITAL_STATUS_CHOICES, max_length=10, blank=True, null=True)
@@ -411,7 +410,7 @@ class Faculty(models.Model):
     employee_id = models.OneToOneField(Person, on_delete=models.RESTRICT, primary_key=True)
     department = models.ForeignKey('Department',  on_delete=models.RESTRICT, db_index=True)
     designation = models.CharField(choices=DESIGNATION_CHOICES, max_length=20, db_index=True)
-    joining_date = models.DateField(blank=True, default=current_time)
+    joining_date = models.DateField(blank=True, default=current_date)
 
     class Meta:
         db_table = 'Faculty'
@@ -439,7 +438,7 @@ class Student(models.Model):
     student_id = models.OneToOneField('Person',  on_delete=models.RESTRICT, primary_key=True)
     program = models.ForeignKey('Program',  on_delete=models.RESTRICT)
     student_class = models.ForeignKey('Class',  on_delete=models.RESTRICT, db_index=True)
-    admission_date = models.DateField(blank=True, default=current_time)
+    admission_date = models.DateField(blank=True, default=current_date)
     status = models.CharField(db_column='status', choices=STATUS_CHOICES, max_length=12, default='Active', db_index=True)
 
     class Meta:
@@ -492,7 +491,7 @@ class AuditTrail(models.Model):
     user = models.ForeignKey('Person', on_delete=models.CASCADE, db_index=True)
     action_type = models.CharField(max_length=10)
     entity_name = models.CharField(max_length=50)
-    time_stamp = models.DateTimeField(default=current_time, db_index=True)
+    time_stamp = models.DateTimeField(auto_now_add=True, db_index=True)
     ip_address = models.CharField( max_length=45)
     user_agent = models.CharField(max_length=255)
     old_value = models.JSONField(blank=True, null=True)

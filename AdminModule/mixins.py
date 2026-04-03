@@ -36,7 +36,7 @@ class PersonSerializerMixin:
         if person_data and model_data:
             if model == 'Faculty':
                 count = Faculty.objects.filter(department=model_data['department']).count()
-                person_id = f'NUM-{model_data["department_id"]}-{str(timezone.now().year)}-{str(count+1)}'
+                person_id = f'NUM-{model_data["department"]}-{str(timezone.now().year)}-{str(count+1)}'
                 person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Faculty', user=user)
                 faculty = Faculty.objects.create(**model_data, employee_id=person)

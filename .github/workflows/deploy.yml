@@ -1,0 +1,32 @@
+name: Deploy NexusAPI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Azure VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.VM_USER }}/NexusAPI
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Building and restarting containers..."
+            docker compose up --build -d
+
+            echo "Cleaning up unused images..."
+            docker image prune -f

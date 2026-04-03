@@ -23,6 +23,11 @@ services:
       - mysql_data:/var/lib/mysql
     networks:
       - nexus_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # DRF backend
   backend:
@@ -30,17 +35,22 @@ services:
       - .env
     build: .
     container_name: backend
-    command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/app
       - code_files:/code
+      - static_files:/app/staticfiles
     ports:
       - "8000:8000"
     depends_on:
-      - redis-server
-      - python-compiler
-      - c-compiler
-      - java-compiler
+      database:
+        condition: service_healthy
+      redis-server:
+        condition: service_started
+      python-compiler:
+        condition: service_started
+      c-compiler:
+        condition: service_started
+      java-compiler:
+        condition: service_started
     networks:
       - nexus_network
 
@@ -52,9 +62,26 @@ services:
     container_name: celery-worker
     command: celery -A NexusAPI worker --loglevel=info
     volumes:
-      - .:/app
+      - code_files:/code
     depends_on:
       - redis-server
+      - backend
+    networks:
+      - nexus_network
+
+  # Nginx
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_files:/app/staticfiles:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
       - backend
     networks:
       - nexus_network
@@ -62,33 +89,37 @@ services:
   # Python compiler
   python-compiler:
     build: ./Compilers/python_compiler
-    container_name: python-compiler
     volumes:
       - code_files:/code
     networks:
       - nexus_network
+    deploy:
+      replicas: 2
 
   # C/C++ compiler
   c-compiler:
     build: ./Compilers/c_compiler
-    container_name: c-compiler
     volumes:
       - code_files:/code
     networks:
       - nexus_network
+    deploy:
+      replicas: 2
 
   # Java compiler
   java-compiler:
     build: ./Compilers/java_compiler
-    container_name: java-compiler
     volumes:
       - code_files:/code
     networks:
       - nexus_network
+    deploy:
+      replicas: 2
 
 volumes:
   code_files:
   mysql_data:
+  static_files:
 
 networks:
   nexus_network:

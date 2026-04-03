@@ -234,7 +234,7 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 
 CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_ALWAYS_EAGER = False
-CELERY_WORKER_POOL = 'solo'
+CELERY_WORKER_POOL = config('CELERY_WORKER_POOL', default='prefork')
 
 
 
@@ -256,3 +256,21 @@ CLOUDINARY_STORAGE = {
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+
+
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost', cast=Csv())
+
+
+# Security settings (only active when DEBUG=False)
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = False        # Nginx handles redirects, not Django
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 0            # Set to 31536000 after SSL is confirmed working
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False

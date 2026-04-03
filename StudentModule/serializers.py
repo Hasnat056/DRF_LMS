@@ -151,7 +151,6 @@ class StudentAssessmentSerializer(serializers.ModelSerializer):
             'assessment_name',
             'assessment_date',
             'total_marks',
-            'file_upload',
             'submission_deadline',
             'assessmentchecked_set'
         ]
@@ -187,7 +186,6 @@ class StudentCourseAllocationSerializer(serializers.ModelSerializer):
             'course_details',
             'semester_id',
             'session',
-            'file_upload',
             'assessment_set'
         ]
 

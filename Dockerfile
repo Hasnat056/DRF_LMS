@@ -18,7 +18,7 @@ RUN useradd -m -u 1000 drfuser
 # This ensures named volume inherits correct permissions
 # -----------------------------
 RUN mkdir -p /code && chown -R 1000:1000 /code
-
+RUN mkdir -p /app/staticfiles && chown -R 1000:1000 /app/staticfiles
 # -----------------------------
 # Set working directory for Django project
 # -----------------------------

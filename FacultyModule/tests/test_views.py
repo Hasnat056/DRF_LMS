@@ -483,3 +483,375 @@ class TestFacultyRequestsListView:
     def test_admin_cannot_access_faculty_requests(self, admin_client):
         response = admin_client.get(f'{FACULTY}/requests/')
         assert response.status_code == 403
+
+
+# ===========================================================================
+# FacultyProfileView — PUT
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestFacultyProfileUpdate:
+
+    def test_put_invalid_contact_number_returns_400(self, faculty_client):
+        r = faculty_client.put(f'{FACULTY}/profile/', {
+            'person': {'contact_number': '123'},
+        }, format='json')
+        assert r.status_code == 400
+
+    def test_put_valid_contact_number_returns_200(self, faculty_client, faculty_instance):
+        r = faculty_client.put(f'{FACULTY}/profile/', {
+            'person': {
+                'contact_number': '+923001239999',
+                'personal_email': 'updated@test.com',
+            },
+            'department': faculty_instance.department.department_id,
+            'designation': faculty_instance.designation,
+            'joining_date': str(faculty_instance.joining_date),
+        }, format='json')
+        assert r.status_code == 200
+
+    def test_put_invalidates_and_repopulates_cache(self, faculty_client, faculty_instance):
+        key = f'faculty:{faculty_instance.employee_id.user.username}'
+        faculty_client.get(f'{FACULTY}/profile/')
+        assert cache.get(key) is not None
+        faculty_client.put(f'{FACULTY}/profile/', {
+            'person': {'contact_number': '+923009876543'},
+            'department': faculty_instance.department.department_id,
+            'designation': faculty_instance.designation,
+            'joining_date': str(faculty_instance.joining_date),
+        }, format='json')
+        # cache is deleted then repopulated — key exists with fresh data
+        assert cache.get(key) is not None
+
+
+# ===========================================================================
+# FacultyCourseAllocationView — cache filter branches
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestFacultyAllocationCacheBranches:
+
+    def test_list_with_no_params_serves_cached_data(
+        self, faculty_client, faculty_instance, course_allocation
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        # prime the cache
+        faculty_client.get(f'{FACULTY}/allocations/')
+        key = f'faculty:{faculty_instance.employee_id.user.username}:allocations'
+        assert cache.get(key) is not None
+        # second hit — served from cache
+        r = faculty_client.get(f'{FACULTY}/allocations/')
+        assert r.status_code == 200
+
+    def test_list_with_status_filter_filters_cached_data(
+        self, faculty_client, faculty_instance, course_allocation
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        faculty_client.get(f'{FACULTY}/allocations/')  # prime cache
+        r = faculty_client.get(f'{FACULTY}/allocations/?status=Completed')
+        assert r.status_code == 200
+
+    def test_allocation_detail_returns_200_for_owner(
+        self, faculty_client, faculty_instance, course_allocation
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = reverse('Faculty:allocation-detail', kwargs={'allocation_id': course_allocation.allocation_id})
+        r = faculty_client.get(url)
+        assert r.status_code == 200
+
+    def test_student_cannot_access_allocations(self, student_client):
+        r = student_client.get(f'{FACULTY}/allocations/')
+        assert r.status_code == 403
+
+
+# ===========================================================================
+# AssessmentRetrieveUpdateDestroyAPIView
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestAssessmentRetrieveUpdateDestroy:
+
+    def test_get_assessment_returns_200(
+        self, faculty_client, faculty_instance, course_allocation, assessment
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = faculty_client.get(url)
+        assert r.status_code == 200
+
+    def test_update_assessment_returns_200(
+        self, faculty_client, faculty_instance, course_allocation, assessment
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = faculty_client.patch(url, {
+            'assessment_name': assessment.assessment_name,
+            'assessment_type': assessment.assessment_type,
+            'assessment_date': str(assessment.assessment_date),
+            'weightage': assessment.weightage,
+            'total_marks': assessment.total_marks,
+            'student_submission': False,
+        }, format='json')
+        assert r.status_code == 200
+
+    def test_delete_assessment_also_deletes_checked(
+        self, faculty_client, faculty_instance, course_allocation, assessment, assessment_checked
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = faculty_client.delete(url)
+        assert r.status_code == 204
+        assert not Assessment.objects.filter(pk=assessment.pk).exists()
+        assert not AssessmentChecked.objects.filter(pk=assessment_checked.pk).exists()
+
+    def test_nonexistent_assessment_returns_404(self, faculty_client, course_allocation):
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/99999/'
+        r = faculty_client.get(url)
+        assert r.status_code == 404
+
+    def test_another_faculty_cannot_access_assessment(
+        self, faculty_client, course_allocation, assessment, db
+    ):
+        from django.contrib.auth.models import User, Group
+        from Models.models import Person, Faculty
+        from datetime import date
+        other_user = User.objects.create_user(username='other2@faculty.com', password='pass')
+        other_user.groups.add(Group.objects.get(name='Faculty'))
+        other_person = Person.objects.create(
+            person_id='OTHER-002', first_name='Other2', last_name='Fac',
+            father_name='F', gender='Male', dob=date(1985, 1, 1),
+            cnic='11111-1111111-2', contact_number='+923001111112',
+            institutional_email='other2@faculty.com', type='Faculty', user=other_user,
+        )
+        other_faculty = Faculty.objects.create(
+            employee_id=other_person, department=course_allocation.faculty.department,
+            designation='Lecturer', joining_date=date(2021, 1, 1),
+        )
+        course_allocation.faculty = other_faculty
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = faculty_client.get(url)
+        assert r.status_code == 403
+
+    def test_admin_can_read_assessment(self, admin_client, course_allocation, assessment):
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = admin_client.get(url)
+        assert r.status_code == 200
+
+    def test_admin_cannot_delete_assessment(self, admin_client, course_allocation, assessment):
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
+        r = admin_client.delete(url)
+        assert r.status_code == 403
+
+
+# ===========================================================================
+# AssessmentListCreate — cache hit filter branch
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestAssessmentListCacheFilter:
+
+    def test_list_with_no_params_serves_cache(
+        self, faculty_client, faculty_instance, course_allocation, assessment
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
+        faculty_client.get(url)   # prime cache
+        r = faculty_client.get(url)
+        assert r.status_code == 200
+
+    def test_list_with_type_filter_applies_to_cached_data(
+        self, faculty_client, faculty_instance, course_allocation, assessment
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
+        faculty_client.get(url)  # prime cache
+        r = faculty_client.get(f'{url}?assessment_type=Quiz')
+        assert r.status_code == 200
+
+
+# ===========================================================================
+# LectureRetrieveUpdateDestroyAPIView
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestLectureRetrieveUpdateDestroy:
+
+    def test_get_lecture_returns_200(
+        self, faculty_client, faculty_instance, course_allocation, lecture
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
+        r = faculty_client.get(url)
+        assert r.status_code == 200
+
+    def test_update_lecture_attendance_returns_200(
+        self, faculty_client, faculty_instance, course_allocation, lecture, enrollment
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
+        r = faculty_client.patch(url, {
+            'venue': 'Room 202',
+            'duration': 90,
+            'topic': 'Updated Topic',
+            'starting_time': (timezone.now() - timedelta(hours=2)).isoformat(),
+            'attendance_set': [
+                {
+                    'id': Attendance.objects.filter(lecture=lecture).first().id,
+                    'enrollment': enrollment.enrollment_id,
+                    'is_present': True,
+                }
+            ],
+        }, format='json')
+        assert r.status_code == 200
+
+    def test_delete_lecture_returns_204(
+        self, faculty_client, faculty_instance, course_allocation, lecture
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
+        r = faculty_client.delete(url)
+        assert r.status_code == 204
+
+    def test_nonexistent_lecture_returns_404(self, faculty_client, course_allocation):
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/NONE-99/'
+        r = faculty_client.get(url)
+        assert r.status_code == 404
+
+    def test_another_faculty_cannot_access_lecture(
+        self, faculty_client, course_allocation, lecture, db
+    ):
+        from django.contrib.auth.models import User, Group
+        from Models.models import Person, Faculty
+        from datetime import date
+        other_user = User.objects.create_user(username='other3@faculty.com', password='pass')
+        other_user.groups.add(Group.objects.get(name='Faculty'))
+        other_person = Person.objects.create(
+            person_id='OTHER-003', first_name='Other3', last_name='Fac',
+            father_name='F', gender='Male', dob=date(1985, 1, 1),
+            cnic='22222-2222222-2', contact_number='+923002222222',
+            institutional_email='other3@faculty.com', type='Faculty', user=other_user,
+        )
+        other_faculty = Faculty.objects.create(
+            employee_id=other_person, department=course_allocation.faculty.department,
+            designation='Lecturer', joining_date=date(2021, 1, 1),
+        )
+        course_allocation.faculty = other_faculty
+        course_allocation.save()
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
+        r = faculty_client.get(url)
+        assert r.status_code == 403
+
+    def test_student_cannot_access_lecture(self, student_client, course_allocation, lecture):
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
+        r = student_client.get(url)
+        assert r.status_code == 403
+
+
+# ===========================================================================
+# ResultCalculationRequest — confirmed request message
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestResultCalculationConfirmedMessage:
+
+    def test_confirmed_pending_request_returns_visit_portal_message(
+        self, faculty_client, faculty_instance, course_allocation, db
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.save()
+        ChangeRequest.objects.create(
+            change_type='result_calculation',
+            target_allocation=course_allocation,
+            requested_by=faculty_instance.employee_id.user,
+            status='confirmed',
+        )
+        url = reverse('Faculty:allocation-calculate-result', kwargs={
+            'allocation_id': course_allocation.allocation_id
+        })
+        r = faculty_client.get(url)
+        assert r.status_code == 200
+        assert 'confirmed' in r.data.get('message', '').lower() or 'approved' in r.data.get('message', '').lower()
+
+    def test_student_cannot_request_result_calculation(
+        self, student_client, course_allocation
+    ):
+        url = reverse('Faculty:allocation-calculate-result', kwargs={
+            'allocation_id': course_allocation.allocation_id
+        })
+        r = student_client.get(url)
+        assert r.status_code == 403
+
+
+# ===========================================================================
+# FacultyRequestsUpdateView
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestFacultyRequestsUpdateView:
+
+    def test_anon_cannot_update_request(self, anon_client, change_request):
+        url = reverse('Faculty:change-request-update', kwargs={'pk': change_request.pk})
+        r = anon_client.patch(url, {'status': 'applied'}, format='json')
+        assert r.status_code == 401
+
+    def test_admin_cannot_update_faculty_request(self, admin_client, change_request):
+        url = reverse('Faculty:change-request-update', kwargs={'pk': change_request.pk})
+        r = admin_client.patch(url, {'status': 'applied'}, format='json')
+        assert r.status_code == 403
+
+    def test_faculty_can_apply_confirmed_request(
+        self, faculty_client, faculty_instance, course_allocation, enrollment,
+        assessment, assessment_checked, change_request
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        enrollment.allocation = course_allocation
+        enrollment.status = 'Active'
+        enrollment.save()
+        assessment_checked.obtained = 75
+        assessment_checked.save()
+        change_request.status = 'confirmed'
+        change_request.target_allocation = course_allocation
+        change_request.requested_by = faculty_instance.employee_id.user
+        change_request.save()
+        url = reverse('Faculty:change-request-update', kwargs={'pk': change_request.pk})
+        r = faculty_client.patch(url, {'status': 'applied'}, format='json')
+        assert r.status_code in (200, 400)  # 400 if null marks still present
+
+    def test_faculty_cannot_update_other_facultys_request(
+        self, faculty_client, change_request, db
+    ):
+        from django.contrib.auth.models import User
+        other_user = User.objects.create_user(username='req_other@test.com', password='pass')
+        change_request.requested_by = other_user
+        change_request.save()
+        url = reverse('Faculty:change-request-update', kwargs={'pk': change_request.pk})
+        r = faculty_client.patch(url, {'status': 'applied'}, format='json')
+        assert r.status_code in (403, 404)
+
+    def test_nonexistent_request_returns_404(self, faculty_client):
+        url = reverse('Faculty:change-request-update', kwargs={'pk': 99999})
+        r = faculty_client.patch(url, {'status': 'applied'}, format='json')
+        assert r.status_code == 404

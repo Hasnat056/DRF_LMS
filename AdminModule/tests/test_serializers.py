@@ -348,9 +348,15 @@ class TestEnrollmentSerializerQueryset:
         course_allocation.status = 'Ongoing'
         course_allocation.save()
 
+        # Use a different course to avoid the unique_together constraint
+        from Models.models import Course
+        other_course = Course.objects.create(
+            course_code='CS-999', course_name='Dummy Course',
+            credit_hours=3, lab=False
+        )
         inactive_alloc = CourseAllocation.objects.create(
             faculty=course_allocation.faculty,
-            course=course_allocation.course,
+            course=other_course,
             semester=course_allocation.semester,
             session='Spring-2025',
             status='Inactive',
@@ -662,3 +668,385 @@ class TestQualificationSerializerValidation:
         serializer = QualificationSerializer(data=data, context=_ctx(admin_user))
         assert not serializer.is_valid()
         assert 'passing_year' in serializer.errors
+
+    def test_total_without_obtained_rejected(self, admin_user):
+        data = {
+            'degree_title': 'BSc', 'education_board': 'BISE',
+            'passing_year': 2015, 'institution': 'Test Uni',
+            'total_marks': 100,
+        }
+        serializer = QualificationSerializer(data=data, context=_ctx(admin_user))
+        assert not serializer.is_valid()
+
+    def test_valid_qualification_passes(self, admin_user):
+        data = {
+            'degree_title': 'BSc', 'education_board': 'BISE',
+            'passing_year': 2015, 'institution': 'Test Uni',
+            'total_marks': 100, 'obtained_marks': 80, 'is_current': False,
+        }
+        serializer = QualificationSerializer(data=data, context=_ctx(admin_user))
+        assert serializer.is_valid(), serializer.errors
+
+
+# ===========================================================================
+# ResultCalculationMixin — GPA logic (absolute and bell curve)
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestResultCalculationMixinAbsolute:
+    """Tests calculate_gpa with < 20 students (absolute grading)."""
+
+    def _make_mixin(self):
+        from AdminModule.mixins import ResultCalculationMixin
+        class Impl(ResultCalculationMixin):
+            pass
+        return Impl()
+
+    def test_score_85_gives_4_0(self, enrollment):
+        mixin = self._make_mixin()
+        enrollment.result.obtained_marks = None
+        enrollment.result.course_gpa = None
+        enrollment.result.save()
+        result = mixin.calculate_gpa({enrollment: 85})
+        from Models.models import Result
+        enrollment.result.refresh_from_db()
+        assert enrollment.result.course_gpa == 4.0
+
+    def test_score_80_gives_3_67(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 80})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 3.67
+
+    def test_score_75_gives_3_33(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 75})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 3.33
+
+    def test_score_70_gives_3_0(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 70})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 3.0
+
+    def test_score_65_gives_2_67(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 65})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 2.67
+
+    def test_score_61_gives_2_33(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 61})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 2.33
+
+    def test_score_58_gives_2_0(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 58})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 2.0
+
+    def test_score_55_gives_1_67(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 55})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 1.67
+
+    def test_score_50_gives_1_0(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 50})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 1.0
+
+    def test_score_below_50_gives_0_0(self, enrollment):
+        mixin = self._make_mixin()
+        mixin.calculate_gpa({enrollment: 40})
+        enrollment.result.refresh_from_db()
+        assert float(enrollment.result.course_gpa) == 0.0
+
+    def test_calculate_result_marks_enrollment_completed(self, course_allocation, enrollment):
+        mixin = self._make_mixin()
+        enrollment.result.obtained_marks = None
+        enrollment.result.save()
+        # need an assessment and checked entry for calculate_result to work
+        from Models.models import Assessment, AssessmentChecked
+        assessment = Assessment.objects.create(
+            allocation=course_allocation,
+            assessment_type='Quiz',
+            assessment_name='Q1',
+            assessment_date=date.today(),
+            weightage=100,
+            total_marks=100,
+            student_submission=False,
+        )
+        AssessmentChecked.objects.create(
+            assessment=assessment, enrollment=enrollment, obtained=80
+        )
+        mixin.calculate_result(course_allocation)
+        enrollment.refresh_from_db()
+        assert enrollment.status == 'Completed'
+
+    def test_calculate_result_with_invalid_instance_returns_message(self, enrollment):
+        mixin = self._make_mixin()
+        result = mixin.calculate_result(enrollment)
+        assert 'message' in result
+
+
+@pytest.mark.django_db
+class TestResultCalculationMixinBellCurve:
+    """Tests calculate_gpa with >= 20 students (bell curve grading)."""
+
+    def _make_mixin(self):
+        from AdminModule.mixins import ResultCalculationMixin
+        class Impl(ResultCalculationMixin):
+            pass
+        return Impl()
+
+    def _make_enrollments(self, db, student_instance, course_allocation, count, base_score):
+        """Create N enrollments with sequential scores."""
+        from django.contrib.auth.models import User
+        from Models.models import Person, Student, Enrollment, Result
+        enrollments = {}
+        scores = [base_score + i for i in range(count)]
+        for i, score in enumerate(scores):
+            if i == 0:
+                # reuse existing student_instance
+                e = Enrollment.objects.create(
+                    student=student_instance,
+                    allocation=course_allocation,
+                    status='Active',
+                )
+                Result.objects.create(enrollment=e)
+                enrollments[e] = score
+                continue
+            user = User.objects.create_user(
+                username=f'bell_user_{i}@test.com',
+                password='pass'
+            )
+            person = Person.objects.create(
+                person_id=f'NUM-BELL-2024-{i}',
+                first_name=f'Bell{i}',
+                last_name='Student',
+                father_name='Father',
+                gender='Male',
+                dob=date(2000, 1, 1),
+                cnic=f'99999-{i:07d}-{i % 10}',
+                contact_number=f'+9230099{i:05d}',
+                institutional_email=f'bell_user_{i}@test.com',
+                type='Student',
+                user=user,
+            )
+            from Models.models import Program
+            stu = Student.objects.create(
+                student_id=person,
+                program=student_instance.program,
+                student_class=student_instance.student_class,
+                admission_date=date(2024, 1, 1),
+                status='Active',
+            )
+            e = Enrollment.objects.create(
+                student=stu,
+                allocation=course_allocation,
+                status='Active',
+            )
+            Result.objects.create(enrollment=e)
+            enrollments[e] = score
+        return enrollments
+
+    def test_bell_curve_used_when_20_or_more_students(
+        self, db, student_instance, course_allocation
+    ):
+        mixin = self._make_mixin()
+        enrollments = self._make_enrollments(db, student_instance, course_allocation, 20, 50)
+        result = mixin.calculate_gpa(enrollments)
+        assert 'mean' in result
+        assert 'standard_deviation' in result
+
+    def test_bell_curve_result_has_score_key(
+        self, db, student_instance, course_allocation
+    ):
+        mixin = self._make_mixin()
+        enrollments = self._make_enrollments(db, student_instance, course_allocation, 20, 50)
+        result = mixin.calculate_gpa(enrollments)
+        # Each student entry has a 'score' key (z-score)
+        student_entries = {k: v for k, v in result.items() if k != 'mean' and k != 'standard_deviation'}
+        for val in student_entries.values():
+            assert 'score' in val
+            assert 'course_gpa' in val
+
+
+# ===========================================================================
+# ChangeRequestSerializer — update transitions
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestChangeRequestSerializerUpdate:
+
+    def test_decline_sets_status_declined(self, admin_user, change_request):
+        from AdminModule.serializers import ChangeRequestSerializer
+        serializer = ChangeRequestSerializer(
+            instance=change_request,
+            data={'status': 'declined'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        updated = serializer.save()
+        assert updated.status == 'declined'
+
+    def test_invalid_status_transition_is_no_op(self, admin_user, change_request):
+        from AdminModule.serializers import ChangeRequestSerializer
+        serializer = ChangeRequestSerializer(
+            instance=change_request,
+            data={'status': 'pending'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        updated = serializer.save()
+        # non-applied/declined status → update() returns instance unchanged
+        assert updated.status == change_request.status
+
+    def test_apply_faculty_delete_removes_faculty(
+        self, admin_user, faculty_instance
+    ):
+        # Don't use the change_request fixture — it pulls in course_allocation
+        # which creates a FK that blocks faculty deletion (RESTRICT).
+        from AdminModule.serializers import ChangeRequestSerializer
+        from Models.models import ChangeRequest
+        from django.utils import timezone
+        cr = ChangeRequest.objects.create(
+            change_type='faculty_delete',
+            target_faculty=faculty_instance,
+            requested_by=admin_user,
+            status='confirmed',
+            requested_at=timezone.now(),
+        )
+
+        serializer = ChangeRequestSerializer(
+            instance=cr,
+            data={'status': 'applied'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        from Models.models import Faculty
+        assert not Faculty.objects.filter(pk=faculty_instance.pk).exists()
+
+    def test_apply_student_delete_removes_student(
+        self, admin_user, student_instance, change_request
+    ):
+        from AdminModule.serializers import ChangeRequestSerializer
+        # rename change_type to student_create (as in serializer code)
+        change_request.change_type = 'student_delete'
+        change_request.target_student = student_instance
+        change_request.status = 'confirmed'
+        change_request.save()
+
+        serializer = ChangeRequestSerializer(
+            instance=change_request,
+            data={'status': 'applied'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        from Models.models import Student
+        assert not Student.objects.filter(pk=student_instance.pk).exists()
+
+
+# ===========================================================================
+# PersonSerializerMixin — create_mixin and update_mixin
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestPersonSerializerMixinCreate:
+
+    def _base_person_data(self):
+        return {
+            'user': {'password': 'testpass123'},
+            'first_name': 'Mixin',
+            'last_name': 'Test',
+            'father_name': 'Father',
+            'gender': 'Male',
+            'dob': '1990-01-01',
+            'cnic': '99999-9999999-9',
+            'contact_number': '+923001234599',
+            'institutional_email': 'mixin@test.com',
+        }
+
+    def test_create_faculty_via_serializer(self, admin_client, department, faculty_group):
+        from AdminModule.serializers import FacultySerializer
+        from rest_framework.test import APIRequestFactory
+        factory = APIRequestFactory()
+        from django.contrib.auth.models import User
+        user = User.objects.get(username='admin@test.com')
+        req = factory.post('/')
+        req.user = user
+        data = {
+            'person': self._base_person_data(),
+            'department': department.department_id,
+            'designation': 'Lecturer',
+            'joining_date': '2024-01-01',
+        }
+        serializer = FacultySerializer(data=data, context={'request': req})
+        assert serializer.is_valid(), serializer.errors
+        faculty = serializer.save()
+        from Models.models import Faculty
+        assert Faculty.objects.filter(pk=faculty.pk).exists()
+        assert faculty.employee_id.user.groups.filter(name='Faculty').exists()
+
+    def test_create_faculty_generates_person_id(self, admin_client, department, faculty_group):
+        from AdminModule.serializers import FacultySerializer
+        from rest_framework.test import APIRequestFactory
+        factory = APIRequestFactory()
+        from django.contrib.auth.models import User
+        user = User.objects.get(username='admin@test.com')
+        req = factory.post('/')
+        req.user = user
+        data = {
+            'person': {**self._base_person_data(), 'institutional_email': 'pid@test.com'},
+            'department': department.department_id,
+            'designation': 'Lecturer',
+            'joining_date': '2024-01-01',
+        }
+        serializer = FacultySerializer(data=data, context={'request': req})
+        assert serializer.is_valid(), serializer.errors
+        faculty = serializer.save()
+        assert faculty.employee_id.person_id.startswith('NUM-')
+
+    def test_update_mixin_updates_address(self, admin_user, faculty_instance):
+        from AdminModule.serializers import FacultySerializer
+        from rest_framework.test import APIRequestFactory
+        from django.contrib.auth.models import User
+        factory = APIRequestFactory()
+        user = User.objects.get(username='admin@test.com')
+        req = factory.put('/')
+        req.user = user
+        data = {
+            'person': {
+                'contact_number': faculty_instance.employee_id.contact_number,
+                'address': {
+                    'country': 'Pakistan',
+                    'province': 'Punjab',
+                    'city': 'Islamabad',
+                    'zipcode': '44000',
+                    'street_address': '123 Test St',
+                },
+            },
+            'department': faculty_instance.department.department_id,
+            'designation': faculty_instance.designation,
+            'joining_date': str(faculty_instance.joining_date),
+        }
+        serializer = FacultySerializer(
+            instance=faculty_instance, data=data, partial=True, context={'request': req}
+        )
+        assert serializer.is_valid(), serializer.errors
+        updated = serializer.save()
+        from Models.models import Address
+        assert Address.objects.filter(person_id=updated.employee_id).exists()

@@ -32,6 +32,13 @@ docker-data/
 .vscode/
 .idea/
 
+
+
+# ===== Claude Code =====
+CLAUDE.md
+.claude
+
+
 # ===== System Files =====
 .DS_Store
 Thumbs.db

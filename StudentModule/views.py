@@ -198,11 +198,11 @@ class StudentEnrollmentCreateAPIView(
         data = cache.get(cache_key)
         allocation_ids = {each['allocation_id'] for each in data}
 
-        enrolled_allocations_id = set(Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True))
+        enrolled_allocations_ids = set(Enrollment.objects.filter(student=student, status='Inactive').values_list('allocation_id', flat=True))
         for each in request_data:
             serializer = StudentEnrollmentCreateSerializerB(
                 data=each,
-                context={'request': request, 'allocation_ids': allocation_ids, 'enrolled_allocations_ids': enrolled_allocations_id}
+                context={'request': request, 'allocation_ids': allocation_ids, 'enrolled_allocations_ids': enrolled_allocations_ids}
             )
             if serializer.is_valid():
                 instance = serializer.save()

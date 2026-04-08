@@ -258,6 +258,11 @@ def enrollment(db, student_instance, course_allocation):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
+def admin_user(admin_instance):
+    return admin_instance.employee_id.user
+
+
+@pytest.fixture
 def admin_client(admin_instance):
     return auth_client(admin_instance.employee_id.user)
 

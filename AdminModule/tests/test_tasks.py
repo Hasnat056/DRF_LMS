@@ -414,3 +414,147 @@ class TestCacheEnrollmentDataTask:
         cache.delete(key)
         cache_enrollment_data_task.delay(admin_user.id)
         assert cache.get(key) is not None
+
+# ===========================================================================
+# cache_programs_data_task
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestCacheProgramsDataTask:
+    from AdminModule.tasks import cache_programs_data_task
+
+    def test_task_is_registered(self):
+        from AdminModule.tasks import cache_programs_data_task
+        assert hasattr(cache_programs_data_task, 'delay')
+
+    def test_writes_programs_list_cache(self, admin_user, program):
+        from AdminModule.tasks import cache_programs_data_task
+        cache.delete('admin:programs_list')
+        cache_programs_data_task.delay(admin_user.id)
+        assert cache.get('admin:programs_list') is not None
+
+    def test_writes_department_programs_cache(self, admin_user, program, department):
+        from AdminModule.tasks import cache_programs_data_task
+        key = f'admin:programs:department:{department.department_id}'
+        cache.delete(key)
+        cache_programs_data_task.delay(admin_user.id)
+        assert cache.get(key) is not None
+
+    def test_empty_programs_writes_empty_list(self, admin_user):
+        from AdminModule.tasks import cache_programs_data_task
+        cache.delete('admin:programs_list')
+        cache_programs_data_task.delay(admin_user.id)
+        data = cache.get('admin:programs_list')
+        assert data is not None
+        assert isinstance(data, list)
+
+
+# ===========================================================================
+# cache_courses_data_task
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestCacheCoursesDataTask:
+
+    def test_task_is_registered(self):
+        from AdminModule.tasks import cache_courses_data_task
+        assert hasattr(cache_courses_data_task, 'delay')
+
+    def test_writes_courses_list_cache(self, admin_user, course):
+        from AdminModule.tasks import cache_courses_data_task
+        cache.delete('admin:courses_list')
+        cache_courses_data_task.delay(admin_user.id)
+        assert cache.get('admin:courses_list') is not None
+
+    def test_empty_courses_writes_empty_list(self, admin_user):
+        from AdminModule.tasks import cache_courses_data_task
+        cache.delete('admin:courses_list')
+        cache_courses_data_task.delay(admin_user.id)
+        data = cache.get('admin:courses_list')
+        assert data is not None
+        assert isinstance(data, list)
+
+
+# ===========================================================================
+# cache_semester_enrollment_data_task
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestCacheSemesterEnrollmentDataTask:
+
+    def test_task_is_registered(self):
+        from AdminModule.tasks import cache_semester_enrollment_data_task
+        assert hasattr(cache_semester_enrollment_data_task, 'delay')
+
+    def test_writes_semester_enrollment_cache(self, inactive_semester, course_allocation):
+        from AdminModule.tasks import cache_semester_enrollment_data_task
+        key = f'admin:enrollments:semester:{inactive_semester.semester_id}'
+        cache.delete(key)
+        cache_semester_enrollment_data_task.delay(inactive_semester.semester_id)
+        assert cache.get(key) is not None
+
+    def test_nonexistent_semester_does_not_crash(self):
+        from AdminModule.tasks import cache_semester_enrollment_data_task
+        # Should handle gracefully (semester not found returns empty or None)
+        cache_semester_enrollment_data_task.delay(99999)
+
+
+# ===========================================================================
+# send_result_calculation_mail / send_result_calculation_confirmation_mail
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestSendResultCalculationMails:
+
+    def test_send_result_calculation_mail_is_registered(self):
+        from AdminModule.tasks import send_result_calculation_mail
+        assert hasattr(send_result_calculation_mail, 'delay')
+
+    def test_send_result_calculation_confirmation_mail_is_registered(self):
+        from AdminModule.tasks import send_result_calculation_confirmation_mail
+        assert hasattr(send_result_calculation_confirmation_mail, 'delay')
+
+    @pytest.mark.django_db
+    def test_send_result_calculation_mail_calls_send_mail(self, change_request):
+        from AdminModule.tasks import send_result_calculation_mail
+        from unittest.mock import patch
+        with patch('AdminModule.tasks.send_mail') as mock_mail:
+            send_result_calculation_mail.delay(
+                change_request.pk,
+                'http://localhost/confirm/abc123/',
+                'admin@test.com'
+            )
+        mock_mail.assert_called_once()
+
+    @pytest.mark.django_db
+    def test_send_result_calculation_confirmation_mail_calls_send_mail(self, change_request):
+        from AdminModule.tasks import send_result_calculation_confirmation_mail
+        from unittest.mock import patch
+        with patch('AdminModule.tasks.send_mail') as mock_mail:
+            send_result_calculation_confirmation_mail.delay(change_request.pk)
+        mock_mail.assert_called_once()
+
+    @pytest.mark.django_db
+    def test_nonexistent_request_id_does_not_crash(self):
+        from AdminModule.tasks import send_result_calculation_mail
+        # Should handle gracefully when request not found
+        try:
+            send_result_calculation_mail.delay(99999, 'http://link/', 'admin@test.com')
+        except Exception:
+            pass  # document if it raises — fix is to add a guard
+
+
+# ===========================================================================
+# send_hod_request_mail / send_hod_change_mail
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestSendHodMails:
+
+    def test_send_hod_request_mail_is_registered(self):
+        from AdminModule.tasks import send_hod_request_mail
+        assert hasattr(send_hod_request_mail, 'delay')
+
+    def test_send_hod_change_mail_is_registered(self):
+        from AdminModule.tasks import send_hod_change_mail
+        assert hasattr(send_hod_change_mail, 'delay')

@@ -303,12 +303,11 @@ def cache_enrollment_data_task(user_id):
 
 @shared_task
 def cache_semester_enrollment_data_task(semester_id):
-    semester = Semester.objects.get(semester_id=semester_id)
-    student_class = Class.objects.filter(semesterdetails__semester=semester).first()
-    if not student_class:
-        return 'Class not found'
+    semester = Semester.objects.filter(semester_id=semester_id).first()
+    if not semester:
+        return "Semester does not exist"
 
-    cache_key = f'enrollments:{student_class.class_id}:semester:allocations'
+    cache_key = f'admin:enrollments:semester:{semester_id}'
 
     allocations = CourseAllocation.objects.filter(semester=semester).select_related('faculty__employee_id', 'course').all()
     data = []
@@ -326,6 +325,22 @@ def cache_semester_enrollment_data_task(semester_id):
 
     return 'Semester allocations data has been cached successfully'
 
+
+
+@shared_task
+def delete_faculty_task(person_id):
+    faculty = Faculty.objects.filter(employee_id__person_id=person_id).first()
+    if faculty:
+        faculty.delete()
+    return f'Faculty {person_id} deleted'
+
+
+@shared_task
+def delete_student_task(person_id):
+    student = Student.objects.filter(student_id__person_id=person_id).first()
+    if student:
+        student.delete()
+    return f'Student {person_id} deleted'
 
 
 # Email Sending tasks

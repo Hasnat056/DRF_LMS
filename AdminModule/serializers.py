@@ -446,11 +446,12 @@ class CourseSerializer(serializers.ModelSerializer):
         return course
 
     def update(self, instance, validated_data):
-        if instance.lab == True and validated_data['lab'] == False:
-            validated_data['credit_hours'] -= 1
-
-        if instance.lab == False and validated_data['lab'] == True:
-            validated_data['credit_hours'] += 1
+        if 'lab' in validated_data:
+            new_lab = validated_data['lab']
+            if instance.lab and not new_lab:
+                validated_data['credit_hours'] = validated_data.get('credit_hours', instance.credit_hours) - 1
+            elif not instance.lab and new_lab:
+                validated_data['credit_hours'] = validated_data.get('credit_hours', instance.credit_hours) + 1
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -861,7 +862,7 @@ class BulkTranscriptSerializer(serializers.Serializer):
             return None
 
         data = []
-        semester = Semester.objects.get(semester_id=self.context.get('semester_id'))
+        semester = Semester.objects.filter(semester_id=self.context.get('semester_id')).first()
 
         # if semester is not found
         if not semester:
@@ -959,18 +960,24 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
         if validated_data['status'] == 'applied':
             if instance.change_type == 'faculty_delete':
                 if instance.target_faculty:
-                    instance.target_faculty.delete()
+                    from .tasks import delete_faculty_task
+                    person_id = instance.target_faculty.employee_id.person_id
+                    instance.target_faculty = None
                     instance.status = 'applied'
                     instance.applied_at = timezone.now()
                     instance.save()
+                    delete_faculty_task.delay(person_id)
                     return instance
 
-            if instance.change_type == 'student_create':
+            if instance.change_type == 'student_delete':
                 if instance.target_student:
-                    instance.target_student.delete()
+                    from .tasks import delete_student_task
+                    person_id = instance.target_student.student_id.person_id
+                    instance.target_student = None
                     instance.status = 'applied'
                     instance.applied_at = timezone.now()
                     instance.save()
+                    delete_student_task.delay(person_id)
                     return instance
 
             if instance.change_type == 'hod_change':

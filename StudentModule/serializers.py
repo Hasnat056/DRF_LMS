@@ -354,7 +354,7 @@ class StudentEnrollmentCreateSerializerB(serializers.Serializer):
         request = self.context.get('request')
         student = request.student
         allocation_ids = self.context.get('allocation_ids')
-        enrolled_allocation_ids = self.context.get('enrolled_allocation_ids')
+        enrolled_allocation_ids = self.context.get('enrolled_allocations_ids')
         if validated_data['allocation_id'] in allocation_ids:
             if validated_data['allocation_id'] in enrolled_allocation_ids and not validated_data['confirm']:
                 Enrollment.objects.get(allocation_id=validated_data['allocation_id'], student=student).delete()

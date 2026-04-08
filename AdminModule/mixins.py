@@ -77,7 +77,7 @@ class PersonSerializerMixin:
             person_data = validated_data.pop('employee_id', {})
             person = instance.employee_id
         if isinstance(instance, Student):
-            person_data = validated_data.pop('student_id')
+            person_data = validated_data.pop('student_id', {})
             person = instance.student_id
 
         if person_data and ('user' in person_data):

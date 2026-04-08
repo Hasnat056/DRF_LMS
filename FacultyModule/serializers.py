@@ -248,8 +248,8 @@ class AssessmentSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if not validated_data['student_submission']:
-            validated_data.pop('student_submission')
-            validated_data.pop('submission_deadline')
+            validated_data.pop('student_submission',{})
+            validated_data.pop('submission_deadline',{})
 
         if 'assessmentchecked_set' in validated_data:
             assessmentChecked_data = validated_data.pop('assessmentchecked_set',{})
@@ -309,10 +309,10 @@ class AttendanceSerializer(serializers.ModelSerializer):
         if not allocation.exists():
             raise serializers.ValidationError(f'No course allocations available for lecture: {data['lecture_id']}')
 
-        enrolled_students = allocation.first().enrollment_set.values_list('student', flat=True)
+        enrolled_students = allocation.first().enrollment_set.values_list('enrollment', flat=True)
 
-        if not allocation.exists() or  data['student'].pk not in enrolled_students :
-            raise serializers.ValidationError(f'Student {data["student"]} does not exist for course allocation: {allocation}')
+        if not allocation.exists() or  data['enrollment'].pk not in enrolled_students :
+            raise serializers.ValidationError(f'Student {data["enrollment"]} does not exist for course allocation: {allocation}')
 
         return data
 
@@ -399,7 +399,7 @@ class LectureSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        attendance_set = validated_data.pop('attendance_set')
+        attendance_set = validated_data.pop('attendance_set', {})
 
         for attribute, value in validated_data.items():
             setattr(instance, attribute, value)
@@ -497,7 +497,7 @@ class FacultyRequestsSerializer(
             for each in allocation.assessment_set.all():
                 for e in each.assessmentchecked_set.all():
                     if not e.obtained:
-                        data[e.enrollment_id.student_id.student_id.person_id] = f'marks for assessment: {each.assessment_name} are null'
+                        data[e.enrollment.student.student_id.person_id] = f'marks for assessment: {each.assessment_name} are null'
 
             if data:
                 raise serializers.ValidationError(data)

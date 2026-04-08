@@ -6,172 +6,313 @@
 <title>NexusAPI — Academic Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/devicons/devicon@v2.15.1/devicon.min.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#07070e;--surface:#0f0f1a;--surface2:#161625;
-  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
-  --text:#eeedf5;--muted:#7a7990;
-  --accent:#7c6fff;--accent2:#00e5b0;--accent3:#ff6b8a;--amber:#ffb347;
+  --bg:#07070e;--surface:#0f0f1a;--surface2:#161625;--surface3:#1c1c2e;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.13);--border3:rgba(255,255,255,0.2);
+  --text:#eeedf5;--muted:#7a7990;--muted2:#555468;
+  --accent:#7c6fff;--accent2:#00e5b0;--accent3:#ff6b8a;--amber:#ffb347;--blue:#60a5fa;
   --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--display:'Syne',sans-serif;
+  --radius:14px;--radius-sm:8px;
 }
 html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-weight:300;line-height:1.7;overflow-x:hidden}
 #particles{position:fixed;inset:0;z-index:0;pointer-events:none}
-.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(124,111,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(124,111,255,0.025) 1px,transparent 1px);background-size:70px 70px}
+.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(124,111,255,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(124,111,255,0.02) 1px,transparent 1px);background-size:60px 60px}
 .orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
-.orb-1{width:700px;height:700px;top:-250px;left:-200px;background:radial-gradient(circle,rgba(124,111,255,0.07) 0%,transparent 70%)}
-.orb-2{width:600px;height:600px;bottom:-150px;right:-150px;background:radial-gradient(circle,rgba(0,229,176,0.05) 0%,transparent 70%)}
-.orb-3{width:400px;height:400px;top:50%;left:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(255,107,138,0.03) 0%,transparent 70%)}
+.orb-1{width:800px;height:800px;top:-300px;left:-250px;background:radial-gradient(circle,rgba(124,111,255,0.08) 0%,transparent 65%)}
+.orb-2{width:700px;height:700px;bottom:-200px;right:-200px;background:radial-gradient(circle,rgba(0,229,176,0.055) 0%,transparent 65%)}
+.orb-3{width:500px;height:500px;top:50%;left:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(255,107,138,0.03) 0%,transparent 70%)}
 
-/* REVEAL */
-.reveal{opacity:0;transform:translateY(40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal{opacity:0;transform:translateY(32px);transition:opacity 0.6s ease,transform 0.6s ease}
 .reveal.visible{opacity:1;transform:translateY(0)}
-.reveal-left{opacity:0;transform:translateX(-40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal-left{opacity:0;transform:translateX(-32px);transition:opacity 0.6s ease,transform 0.6s ease}
 .reveal-left.visible{opacity:1;transform:translateX(0)}
-.reveal-right{opacity:0;transform:translateX(40px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal-right{opacity:0;transform:translateX(32px);transition:opacity 0.6s ease,transform 0.6s ease}
 .reveal-right.visible{opacity:1;transform:translateX(0)}
 
 /* NAV */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1.1rem 4rem;background:rgba(7,7,14,0.8);backdrop-filter:blur(24px);border-bottom:1px solid var(--border)}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1rem 4rem;background:rgba(7,7,14,0.88);backdrop-filter:blur(28px);border-bottom:1px solid var(--border)}
 .nav-logo{font-family:var(--display);font-weight:800;font-size:1.1rem;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
 .nav-logo span{color:var(--accent)}
-.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
-.nav-links a{font-size:0.84rem;color:var(--muted);text-decoration:none;font-weight:400;transition:color 0.2s;letter-spacing:0.02em}
+.nav-links{display:flex;align-items:center;gap:1.8rem;list-style:none}
+.nav-links a{font-size:0.83rem;color:var(--muted);text-decoration:none;transition:color 0.2s;letter-spacing:0.02em}
 .nav-links a:hover{color:var(--text)}
-.nav-cta{font-size:0.82rem!important;color:var(--accent)!important;border:1px solid rgba(124,111,255,0.3);padding:0.4rem 1rem;border-radius:6px;transition:background 0.2s!important}
-.nav-cta:hover{background:rgba(124,111,255,0.1)!important;color:var(--text)!important}
+.nav-cta{font-size:0.81rem!important;color:var(--accent)!important;border:1px solid rgba(124,111,255,0.3);padding:0.36rem 1rem;border-radius:6px;transition:background 0.2s,color 0.2s!important}
+.nav-cta:hover{background:rgba(124,111,255,0.12)!important;color:var(--text)!important}
+.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px;background:none;border:none}
+.hamburger span{display:block;width:22px;height:2px;background:var(--muted);border-radius:2px;transition:all 0.3s}
+.hamburger.open span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.hamburger.open span:nth-child(2){opacity:0}
+.hamburger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+.mobile-menu{display:none;position:fixed;inset:0;top:57px;z-index:99;background:rgba(7,7,14,0.97);backdrop-filter:blur(20px);flex-direction:column;padding:2rem;border-top:1px solid var(--border);opacity:0;transition:opacity 0.25s}
+.mobile-menu.open{display:flex;opacity:1}
+.mobile-menu a{font-size:1.05rem;color:var(--muted);text-decoration:none;padding:0.9rem 0;border-bottom:1px solid var(--border);transition:color 0.2s}
+.mobile-menu a:hover,.mobile-menu a:last-child{color:var(--accent);border-bottom:none}
 
 /* HERO */
 .hero{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 5rem}
-.hero-badge{display:inline-flex;align-items:center;gap:0.5rem;font-family:var(--mono);font-size:0.7rem;color:var(--accent2);border:1px solid rgba(0,229,176,0.2);background:rgba(0,229,176,0.05);padding:0.35rem 1rem;border-radius:100px;margin-bottom:2.5rem;letter-spacing:0.1em;text-transform:uppercase;animation:fadeUp 0.6s ease both}
-.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent2);animation:blink 2s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
-h1{font-family:var(--display);font-size:clamp(3.2rem,9vw,7rem);font-weight:800;line-height:0.95;letter-spacing:-0.05em;margin-bottom:1.8rem;animation:fadeUp 0.7s 0.1s ease both}
+.hero-badge{display:inline-flex;align-items:center;gap:0.5rem;font-family:var(--mono);font-size:0.68rem;color:var(--accent2);border:1px solid rgba(0,229,176,0.2);background:rgba(0,229,176,0.05);padding:0.35rem 1.1rem;border-radius:100px;margin-bottom:2.5rem;letter-spacing:0.1em;text-transform:uppercase;animation:fadeUp 0.6s ease both}
+.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent2);animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.15}}
+h1{font-family:var(--display);font-size:clamp(2.8rem,8.5vw,6.8rem);font-weight:800;line-height:0.93;letter-spacing:-0.05em;margin-bottom:1.8rem;animation:fadeUp 0.7s 0.1s ease both}
 h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero-sub{font-size:clamp(1rem,2vw,1.15rem);color:var(--muted);max-width:520px;margin:0 auto 3rem;font-weight:300;animation:fadeUp 0.7s 0.2s ease both}
+.hero-sub{font-size:clamp(0.93rem,2vw,1.1rem);color:var(--muted);max-width:560px;margin:0 auto 3rem;font-weight:300;animation:fadeUp 0.7s 0.2s ease both;line-height:1.75}
 .hero-actions{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.7s 0.3s ease both}
-.btn-primary{display:inline-flex;align-items:center;gap:0.5rem;background:var(--accent);color:#fff;text-decoration:none;padding:0.85rem 1.8rem;border-radius:8px;font-size:0.9rem;font-weight:500;font-family:var(--sans);transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 0 30px rgba(124,111,255,0.3)}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(124,111,255,0.5)}
-.btn-secondary{display:inline-flex;align-items:center;gap:0.5rem;background:transparent;color:var(--muted);text-decoration:none;padding:0.85rem 1.8rem;border-radius:8px;font-size:0.9rem;font-weight:400;font-family:var(--sans);border:1px solid var(--border2);transition:color 0.2s,border-color 0.2s,transform 0.2s}
-.btn-secondary:hover{color:var(--text);border-color:rgba(255,255,255,0.2);transform:translateY(-2px)}
-.scroll-hint{position:absolute;bottom:2.5rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:0.5rem;animation:fadeUp 1s 0.8s ease both}
-.scroll-hint span{font-size:0.65rem;color:var(--muted);font-family:var(--mono);letter-spacing:0.1em;text-transform:uppercase}
+.btn-primary{display:inline-flex;align-items:center;gap:0.5rem;background:var(--accent);color:#fff;text-decoration:none;padding:0.85rem 1.9rem;border-radius:var(--radius-sm);font-size:0.9rem;font-weight:500;font-family:var(--sans);transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 0 35px rgba(124,111,255,0.35)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 55px rgba(124,111,255,0.55)}
+.btn-secondary{display:inline-flex;align-items:center;gap:0.5rem;background:transparent;color:var(--muted);text-decoration:none;padding:0.85rem 1.9rem;border-radius:var(--radius-sm);font-size:0.9rem;font-weight:400;font-family:var(--sans);border:1px solid var(--border2);transition:color 0.2s,border-color 0.2s,transform 0.2s,background 0.2s}
+.btn-secondary:hover{color:var(--text);border-color:rgba(255,255,255,0.22);transform:translateY(-2px);background:rgba(255,255,255,0.03)}
+.scroll-hint{position:absolute;bottom:2.5rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:0.5rem;animation:fadeUp 1s 0.9s ease both}
+.scroll-hint span{font-size:0.62rem;color:var(--muted2);font-family:var(--mono);letter-spacing:0.12em;text-transform:uppercase}
 .scroll-mouse{width:22px;height:34px;border:1px solid var(--border2);border-radius:12px;display:flex;justify-content:center;padding-top:6px}
 .scroll-dot{width:3px;height:6px;background:var(--accent);border-radius:3px;animation:scrollDot 1.8s infinite}
 @keyframes scrollDot{0%{transform:translateY(0);opacity:1}100%{transform:translateY(10px);opacity:0}}
 
 /* STATS */
 .stats{position:relative;z-index:1;display:flex;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
-.stat{flex:1;min-width:120px;text-align:center;padding:2rem 1.2rem;border-right:1px solid var(--border)}
+.stat{flex:1;min-width:130px;text-align:center;padding:2.2rem 1.2rem;border-right:1px solid var(--border);transition:background 0.2s}
 .stat:last-child{border-right:none}
-.stat-num{font-family:var(--display);font-size:1.9rem;font-weight:700;color:var(--text);display:block;line-height:1;margin-bottom:0.3rem}
-.stat-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-family:var(--mono)}
+.stat:hover{background:var(--surface2)}
+.stat-num{font-family:var(--display);font-size:1.95rem;font-weight:700;color:var(--text);display:block;line-height:1;margin-bottom:0.35rem}
+.stat-label{font-size:0.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-family:var(--mono)}
 
 /* WRAPPER */
-.wrapper{position:relative;z-index:1;max-width:1140px;margin:0 auto;padding:6rem 2rem}
-.section-label{font-family:var(--mono);font-size:0.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:0.8rem;display:block}
-h2{font-family:var(--display);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;line-height:1.05;margin-bottom:0.8rem}
-.section-desc{color:var(--muted);font-size:0.95rem;max-width:480px;margin-bottom:3.5rem}
+.wrapper{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:6rem 2rem}
+.section-label{font-family:var(--mono);font-size:0.66rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.16em;margin-bottom:0.8rem;display:block}
+h2{font-family:var(--display);font-size:clamp(1.8rem,3.8vw,2.8rem);font-weight:700;letter-spacing:-0.03em;line-height:1.05;margin-bottom:0.8rem}
+.section-desc{color:var(--muted);font-size:0.92rem;max-width:520px;margin-bottom:3.5rem;line-height:1.78}
+.section-divider{position:relative;z-index:1;height:1px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 2rem}
 
 /* FEATURES */
-.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:16px;overflow:hidden}
-.feature-card{background:var(--surface);padding:2rem;transition:background 0.25s}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.feature-card{background:var(--surface);padding:2rem;transition:background 0.25s;position:relative;overflow:hidden}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(124,111,255,0.4),transparent);opacity:0;transition:opacity 0.3s}
 .feature-card:hover{background:var(--surface2)}
-.feature-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:1.2rem;font-size:1.1rem}
+.feature-card:hover::before{opacity:1}
+.feature-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:1.2rem;font-size:1.15rem}
 .icon-purple{background:rgba(124,111,255,0.12)}.icon-teal{background:rgba(0,229,176,0.1)}.icon-red{background:rgba(255,107,138,0.1)}.icon-amber{background:rgba(255,179,71,0.1)}.icon-blue{background:rgba(59,130,246,0.1)}.icon-green{background:rgba(52,211,153,0.1)}
 .feature-title{font-family:var(--display);font-size:1rem;font-weight:600;margin-bottom:0.5rem;color:var(--text)}
-.feature-desc{font-size:0.875rem;color:var(--muted);line-height:1.6}
+.feature-desc{font-size:0.86rem;color:var(--muted);line-height:1.65}
 
 /* MODULES */
-.modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
-.module-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;transition:border-color 0.25s,transform 0.25s}
-.module-card:hover{border-color:var(--border2);transform:translateY(-3px)}
+.modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:18px}
+.module-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s}
+.module-card:hover{border-color:var(--border2);transform:translateY(-4px);box-shadow:0 20px 60px rgba(0,0,0,0.4)}
 .module-header{padding:1.5rem 1.8rem 1.2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem}
 .module-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
 .module-name{font-family:var(--display);font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:0.15rem}
-.module-tag{font-family:var(--mono);font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em}
+.module-tag{font-family:var(--mono);font-size:0.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em}
 .module-body{padding:1.5rem 1.8rem}
-.module-endpoints{display:flex;flex-direction:column;gap:8px}
+.module-endpoints{display:flex;flex-direction:column;gap:9px}
 .me{display:flex;align-items:center;gap:0.75rem}
-.method{font-family:var(--mono);font-size:0.65rem;font-weight:500;padding:0.18rem 0.55rem;border-radius:4px;min-width:44px;text-align:center}
-.method-get{background:rgba(0,229,176,0.1);color:var(--accent2)}
-.method-post{background:rgba(124,111,255,0.1);color:var(--accent)}
-.method-put{background:rgba(255,179,71,0.1);color:var(--amber)}
-.method-delete{background:rgba(255,107,138,0.1);color:var(--accent3)}
-.me-path{font-family:var(--mono);font-size:0.78rem;color:var(--text);flex:1}
-.me-desc{font-size:0.72rem;color:var(--muted)}
+.method{font-family:var(--mono);font-size:0.62rem;font-weight:500;padding:0.18rem 0.5rem;border-radius:4px;min-width:42px;text-align:center;flex-shrink:0}
+.method-get{background:rgba(0,229,176,0.1);color:var(--accent2)}.method-post{background:rgba(124,111,255,0.1);color:var(--accent)}.method-put{background:rgba(255,179,71,0.1);color:var(--amber)}.method-delete{background:rgba(255,107,138,0.1);color:var(--accent3)}
+.me-path{font-family:var(--mono);font-size:0.76rem;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me-desc{font-size:0.7rem;color:var(--muted);white-space:nowrap}
+
+/* ── STATE MACHINE ─────────────────────────────── */
+.sm-container{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2.5rem;overflow-x:auto}
+.sm-flow{display:flex;align-items:flex-start;gap:0;min-width:600px}
+.sm-node{flex:1;display:flex;flex-direction:column;align-items:center;position:relative}
+.sm-state{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:0.9rem 1.4rem;text-align:center;width:100%}
+.sm-state-name{font-family:var(--display);font-size:1rem;font-weight:700;margin-bottom:0.2rem}
+.sm-state-desc{font-size:0.68rem;color:var(--muted);font-family:var(--mono)}
+.sm-state.inactive{border-color:rgba(255,179,71,0.35);background:rgba(255,179,71,0.05)}
+.sm-state.inactive .sm-state-name{color:var(--amber)}
+.sm-state.active{border-color:rgba(0,229,176,0.35);background:rgba(0,229,176,0.05)}
+.sm-state.active .sm-state-name{color:var(--accent2)}
+.sm-state.completed{border-color:rgba(124,111,255,0.35);background:rgba(124,111,255,0.05)}
+.sm-state.completed .sm-state-name{color:var(--accent)}
+.sm-cascade{margin-top:1.2rem;display:flex;flex-direction:column;gap:5px;width:100%}
+.sm-cascade-item{font-size:0.7rem;color:var(--muted);font-family:var(--mono);background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:5px;padding:0.3rem 0.6rem;display:flex;align-items:center;gap:0.4rem}
+.sm-cascade-item::before{content:'↳';color:var(--accent);flex-shrink:0}
+.sm-connector{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:0.9rem 0.5rem 0;gap:0.3rem;min-width:110px;flex-shrink:0}
+.sm-arrow-line{display:flex;align-items:center;gap:2px;width:100%}
+.sm-arrow-line::before,.sm-arrow-line::after{content:'';flex:1;height:1px;background:var(--border2)}
+.sm-arrow-line svg{flex-shrink:0;color:var(--accent2)}
+.sm-trigger{font-family:var(--mono);font-size:0.6rem;color:var(--accent2);text-align:center;line-height:1.4;padding:0 0.2rem}
+
+/* ── GPA ALGORITHM ─────────────────────────────── */
+.gpa-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.gpa-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;position:relative;overflow:hidden}
+.gpa-card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--radius) var(--radius) 0 0}
+.gpa-card.absolute::after{background:linear-gradient(90deg,var(--accent2),transparent)}
+.gpa-card.bellcurve::after{background:linear-gradient(90deg,var(--accent),transparent)}
+.gpa-card-label{font-family:var(--mono);font-size:0.63rem;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.3rem}
+.gpa-card.absolute .gpa-card-label{color:var(--accent2)}
+.gpa-card.bellcurve .gpa-card-label{color:var(--accent)}
+.gpa-card-title{font-family:var(--display);font-size:1.1rem;font-weight:700;margin-bottom:0.2rem;color:var(--text)}
+.gpa-card-condition{font-size:0.75rem;color:var(--muted);margin-bottom:1.4rem;font-family:var(--mono)}
+.gpa-formula{background:rgba(124,111,255,0.07);border:1px solid rgba(124,111,255,0.15);border-radius:8px;padding:0.8rem 1rem;font-family:var(--mono);font-size:0.8rem;color:var(--accent);margin-bottom:1.2rem;text-align:center}
+.gpa-table{width:100%;border-collapse:collapse;font-size:0.78rem}
+.gpa-table th{font-family:var(--mono);font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);padding:0.4rem 0;border-bottom:1px solid var(--border);text-align:left}
+.gpa-table td{padding:0.35rem 0;color:var(--text);border-bottom:1px solid rgba(255,255,255,0.03)}
+.gpa-table td:last-child{text-align:right;font-family:var(--mono);font-weight:500}
+.gpa-table tr:last-child td{border-bottom:none}
+.gpa-pip{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+
+/* ── CHANGEREQUEST FLOW ─────────────────────────── */
+.cr-timeline{position:relative;padding-left:2.5rem}
+.cr-timeline::before{content:'';position:absolute;left:11px;top:14px;bottom:14px;width:1px;background:linear-gradient(to bottom,var(--accent),rgba(124,111,255,0.1))}
+.cr-step{position:relative;margin-bottom:2rem}
+.cr-step:last-child{margin-bottom:0}
+.cr-dot{position:absolute;left:-2.5rem;top:4px;width:24px;height:24px;border-radius:50%;border:2px solid var(--accent);background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.62rem;color:var(--accent);font-weight:600}
+.cr-content{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem 1.5rem;transition:border-color 0.2s}
+.cr-content:hover{border-color:var(--border2)}
+.cr-actor{font-family:var(--mono);font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:0.3rem}
+.cr-action{font-family:var(--display);font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:0.4rem}
+.cr-detail{font-size:0.79rem;color:var(--muted);line-height:1.6}
+.cr-code{font-family:var(--mono);font-size:0.73rem;color:var(--accent2);background:rgba(0,229,176,0.06);border:1px solid rgba(0,229,176,0.15);border-radius:5px;padding:0.2rem 0.55rem;display:inline-block;margin-top:0.4rem}
+
+/* ── CACHE ARCHITECTURE ─────────────────────────── */
+.cache-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:1.5rem}
+.cache-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.8rem;position:relative;overflow:hidden}
+.cache-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;border-radius:var(--radius) 0 0 var(--radius)}
+.cache-card.l1::before{background:var(--accent2)}
+.cache-card.l2::before{background:var(--accent)}
+.cache-layer-badge{font-family:var(--mono);font-size:0.6rem;text-transform:uppercase;letter-spacing:0.14em;padding:0.2rem 0.6rem;border-radius:100px;margin-bottom:0.8rem;display:inline-block}
+.cache-card.l1 .cache-layer-badge{background:rgba(0,229,176,0.1);color:var(--accent2)}
+.cache-card.l2 .cache-layer-badge{background:rgba(124,111,255,0.1);color:var(--accent)}
+.cache-title{font-family:var(--display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:0.5rem}
+.cache-desc{font-size:0.82rem;color:var(--muted);margin-bottom:1rem;line-height:1.65}
+.cache-keys{display:flex;flex-direction:column;gap:5px}
+.cache-key{font-family:var(--mono);font-size:0.69rem;color:var(--text);background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:5px;padding:0.3rem 0.65rem}
+.cache-ttl{font-family:var(--mono);font-size:0.67rem;color:var(--muted);margin-top:1rem}
+.cache-ttl strong{color:var(--text)}
+.cache-bypass{background:rgba(255,107,138,0.06);border:1px solid rgba(255,107,138,0.2);border-radius:10px;padding:1rem 1.4rem;font-size:0.82rem;color:var(--muted);display:flex;align-items:flex-start;gap:0.8rem;line-height:1.6}
+.cache-bypass-icon{color:var(--accent3);font-size:0.9rem;flex-shrink:0;margin-top:2px}
 
 /* COMPILER */
-.compiler-showcase{display:grid;grid-template-columns:1fr 1.4fr;gap:2rem;align-items:center}
+.compiler-showcase{display:grid;grid-template-columns:1fr 1.45fr;gap:2rem;align-items:center}
 .compiler-tabs{display:flex;flex-direction:column;gap:10px}
-.compiler-tab{display:flex;align-items:center;gap:1rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.2rem;cursor:pointer;transition:border-color 0.2s,background 0.2s}
-.compiler-tab.active{border-color:var(--accent);background:rgba(124,111,255,0.06)}
-.compiler-tab-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.compiler-tab{display:flex;align-items:center;gap:1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;cursor:pointer;transition:border-color 0.2s,background 0.2s,box-shadow 0.2s}
+.compiler-tab.active{border-color:var(--accent);background:rgba(124,111,255,0.06);box-shadow:0 0 20px rgba(124,111,255,0.1)}
+.compiler-tab-icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
 .compiler-tab-name{font-family:var(--display);font-size:0.9rem;font-weight:600;color:var(--text);margin-bottom:0.1rem}
-.compiler-tab-desc{font-size:0.75rem;color:var(--muted)}
-.compiler-tab-badge{margin-left:auto;font-family:var(--mono);font-size:0.65rem;padding:0.2rem 0.6rem;border-radius:100px;background:rgba(0,229,176,0.1);color:var(--accent2)}
-.code-window{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.compiler-tab-desc{font-size:0.72rem;color:var(--muted)}
+.compiler-tab-badge{margin-left:auto;font-family:var(--mono);font-size:0.62rem;padding:0.18rem 0.6rem;border-radius:100px;background:rgba(0,229,176,0.1);color:var(--accent2);border:1px solid rgba(0,229,176,0.2);flex-shrink:0}
+.code-window{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.4)}
 .code-titlebar{display:flex;align-items:center;gap:0.5rem;padding:0.9rem 1.2rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.02)}
-.dot-r{width:10px;height:10px;border-radius:50%;background:#ff5f57}
-.dot-a{width:10px;height:10px;border-radius:50%;background:#ffbd2e}
-.dot-g{width:10px;height:10px;border-radius:50%;background:#28c840}
-.code-filename{font-family:var(--mono);font-size:0.72rem;color:var(--muted);margin-left:0.5rem}
-.code-body{padding:1.5rem;font-family:var(--mono);font-size:0.82rem;line-height:1.8;min-height:300px;position:relative}
+.dot-r{width:10px;height:10px;border-radius:50%;background:#ff5f57}.dot-a{width:10px;height:10px;border-radius:50%;background:#ffbd2e}.dot-g{width:10px;height:10px;border-radius:50%;background:#28c840}
+.code-filename{font-family:var(--mono);font-size:0.71rem;color:var(--muted);margin-left:0.5rem}
+.code-body{padding:1.5rem;font-family:var(--mono);font-size:0.8rem;line-height:1.85;min-height:300px;position:relative}
 .code-panel{position:absolute;inset:1.5rem;transition:opacity 0.4s,transform 0.4s}
 .code-panel.hidden{opacity:0;transform:translateY(8px);pointer-events:none}
 .code-panel.visible{opacity:1;transform:translateY(0)}
 .kw{color:#bb9af7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.cls{color:#e0af68}
 .code-output{margin-top:1rem;border-top:1px solid var(--border);padding-top:0.8rem}
-.output-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.3rem}
-.output-text{color:var(--accent2);font-size:0.8rem}
+.output-label{font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem}
+.output-text{color:var(--accent2);font-size:0.79rem}
+
+/* COMPILER FEATURES */
+.compiler-features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:2rem}
+.cf-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem;display:flex;gap:0.8rem;align-items:flex-start}
+.cf-icon{font-size:1.1rem;flex-shrink:0;margin-top:2px}
+.cf-title{font-family:var(--display);font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:0.2rem}
+.cf-desc{font-size:0.76rem;color:var(--muted);line-height:1.55}
 
 /* TEST */
-.test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:2.5rem}
-.test-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center;transition:border-color 0.2s,transform 0.2s}
-.test-card:hover{border-color:var(--border2);transform:translateY(-2px)}
-.test-num{font-family:var(--display);font-size:2.4rem;font-weight:800;line-height:1;margin-bottom:0.3rem;display:block}
-.test-label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--mono)}
-.coverage-bars{display:flex;flex-direction:column;gap:12px}
-.coverage-row{display:flex;align-items:center;gap:1rem}
-.coverage-module{font-family:var(--mono);font-size:0.78rem;color:var(--text);min-width:140px}
-.coverage-bar-wrap{flex:1;background:rgba(255,255,255,0.05);border-radius:100px;height:6px;overflow:hidden}
-.coverage-bar{height:100%;border-radius:100px;transition:width 1.2s cubic-bezier(0.4,0,0.2,1)}
-.coverage-pct{font-family:var(--mono);font-size:0.75rem;color:var(--muted);min-width:36px;text-align:right}
+.test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:14px;margin-bottom:2.5rem}
+.test-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.7rem 1.5rem;text-align:center;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s}
+.test-card:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.3)}
+.test-num{font-family:var(--display);font-size:2.4rem;font-weight:800;line-height:1;margin-bottom:0.35rem;display:block}
+.test-label{font-size:0.69rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-family:var(--mono)}
+.coverage-bars{display:flex;flex-direction:column;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem}
+.coverage-row{display:flex;align-items:center;gap:1.2rem}
+.coverage-module{font-family:var(--mono);font-size:0.76rem;color:var(--text);min-width:150px}
+.coverage-bar-wrap{flex:1;background:rgba(255,255,255,0.05);border-radius:100px;height:5px;overflow:hidden}
+.coverage-bar{height:100%;border-radius:100px;transition:width 1.3s cubic-bezier(0.4,0,0.2,1)}
+.coverage-pct{font-family:var(--mono);font-size:0.73rem;color:var(--muted);min-width:44px;text-align:right}
 
 /* ARCH */
-.arch-flow{display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;flex-wrap:wrap}
-.arch-step{flex:1;min-width:120px;padding:2rem 1.2rem;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
+.arch-flow{display:flex;align-items:stretch;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;flex-wrap:wrap}
+.arch-step{flex:1;min-width:110px;padding:2rem 1rem;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
 .arch-step:last-child{border-right:none}
 .arch-step:hover{background:var(--surface2)}
-.arch-step-num{font-family:var(--mono);font-size:0.62rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.5rem;display:block}
-.arch-step-name{font-family:var(--display);font-size:0.9rem;font-weight:600;color:var(--text);margin-bottom:0.3rem}
-.arch-step-desc{font-size:0.72rem;color:var(--muted)}
+.arch-step-num{font-family:var(--mono);font-size:0.59rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:0.6rem;display:block}
+.arch-step-name{font-family:var(--display);font-size:0.9rem;font-weight:600;color:var(--text);margin-bottom:0.35rem}
+.arch-step-desc{font-size:0.69rem;color:var(--muted)}
 
 /* STACK */
-.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-.stack-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem;text-align:center;transition:border-color 0.2s,transform 0.2s}
-.stack-item:hover{border-color:var(--border2);transform:translateY(-2px)}
-.stack-dot{width:8px;height:8px;border-radius:50%;margin:0 auto 0.7rem}
-.stack-name{font-family:var(--mono);font-size:0.76rem;color:var(--text);display:block;margin-bottom:0.2rem}
-.stack-role{font-size:0.68rem;color:var(--muted)}
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px}
+.stack-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem 1.2rem;text-align:center;transition:border-color 0.25s,transform 0.25s;position:relative;overflow:hidden;cursor:default}
+.stack-item::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,var(--stack-accent,rgba(124,111,255,0.08)),transparent 70%);opacity:0;transition:opacity 0.35s}
+.stack-item:hover{border-color:var(--border2);transform:translateY(-3px)}
+.stack-item:hover::before{opacity:1}
+.stack-icon{width:40px;height:40px;margin:0 auto 0.9rem;display:flex;align-items:center;justify-content:center;border-radius:10px}
+.stack-icon i{font-size:1.6rem}
+.stack-name{font-family:var(--mono);font-size:0.75rem;color:var(--text);display:block;margin-bottom:0.2rem;font-weight:500}
+.stack-role{font-size:0.66rem;color:var(--muted)}
+
+/* ARCH DIAGRAM V2 */
+.arch-v2-wrapper{overflow-x:auto;border-radius:var(--radius)}
+.arch-v2{position:relative;width:100%;min-width:1000px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.arch-v2-svg{display:block;width:100%;height:auto;pointer-events:none}
+.arch-v2-node{position:absolute;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:.65rem .95rem;display:flex;align-items:center;gap:.65rem;cursor:default;opacity:0;transform:translateY(12px) scale(.96);transition:opacity .5s ease,transform .5s ease,border-color .25s,box-shadow .25s;z-index:1}
+.arch-v2.entered .arch-v2-node{opacity:1;transform:none}
+.arch-v2-node:hover{border-color:rgba(124,111,255,.5)!important;box-shadow:0 0 24px rgba(124,111,255,.18)!important;z-index:3;transform:translateY(-2px) scale(1.01)!important}
+.arch-v2-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0}
+.arch-v2-name{font-family:var(--display);font-size:.8rem;font-weight:600;color:var(--text);white-space:nowrap;line-height:1.2}
+.arch-v2-sub{font-family:var(--mono);font-size:.57rem;color:var(--muted);white-space:nowrap;margin-top:2px}
+.arch-v2-badge{font-family:var(--mono);font-size:.55rem;padding:.12rem .45rem;border-radius:100px;margin-left:auto;flex-shrink:0;white-space:nowrap;border:1px solid transparent}
+.ext-badge{background:rgba(255,179,71,.1);color:var(--amber);border-color:rgba(255,179,71,.2)}
+.arch-v2-node.node-main{border-color:rgba(68,183,139,.35);background:rgba(68,183,139,.05)}
+@keyframes nodePulse{0%,100%{box-shadow:0 0 0 0 rgba(68,183,139,.3)}60%{box-shadow:0 0 0 12px rgba(68,183,139,0)}}
+.arch-v2.entered .arch-v2-node.node-main{animation:nodePulse 3.5s ease-in-out infinite}
+.arch-v2.entered .arch-v2-node.node-main:hover{animation:none;border-color:rgba(68,183,139,.65)!important;box-shadow:0 0 30px rgba(68,183,139,.22)!important;transform:translateY(-2px) scale(1.01)!important}
 
 /* FOOTER */
-footer{position:relative;z-index:1;border-top:1px solid var(--border);background:var(--surface);padding:3rem 4rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+footer{position:relative;z-index:1;border-top:1px solid var(--border);background:var(--surface);padding:3rem 4rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1.5rem}
 .footer-brand{font-family:var(--display);font-weight:700;font-size:1rem;color:var(--text)}
 .footer-brand span{color:var(--accent)}
-.footer-links{display:flex;gap:1.5rem;list-style:none}
+.footer-links{display:flex;gap:1.8rem;list-style:none}
 .footer-links a{font-size:0.82rem;color:var(--muted);text-decoration:none;transition:color 0.2s}
 .footer-links a:hover{color:var(--text)}
-.footer-copy{font-size:0.75rem;color:var(--muted);font-family:var(--mono)}
-@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.footer-copy{font-size:0.72rem;color:var(--muted2);font-family:var(--mono)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
 
-@media(max-width:900px){
-  nav{padding:1rem 1.5rem}.nav-links{display:none}
-  .stat{border-right:none;border-bottom:1px solid var(--border)}.stat:last-child{border-bottom:none}
+/* RESPONSIVE */
+@media(max-width:1024px){
+  nav{padding:1rem 2rem}
+  .wrapper{padding:5rem 1.5rem}
+  .gpa-grid,.cache-grid{grid-template-columns:1fr}
+  footer{padding:2.5rem 2rem}
+}
+@media(max-width:768px){
+  nav{padding:1rem 1.5rem}
+  .nav-links{display:none}
+  .hamburger{display:flex}
+  .stat{flex:1 1 45%;border-right:none;border-bottom:1px solid var(--border)}
+  .stat:nth-child(even){border-left:1px solid var(--border)}
+  .stat:last-child,.stat:nth-last-child(2):nth-child(odd){border-bottom:none}
   .compiler-showcase{grid-template-columns:1fr}
-  .arch-step{border-right:none;border-bottom:1px solid var(--border)}.arch-step:last-child{border-bottom:none}
+  .arch-step{flex:1 1 45%;border-right:none;border-bottom:1px solid var(--border)}
+  .arch-step:last-child{border-bottom:none}
+  .features-grid{grid-template-columns:1fr}
+  .modules-grid{grid-template-columns:1fr}
+  .sm-flow{flex-direction:column;min-width:unset}
+  .sm-connector{padding:0.5rem;flex-direction:row;min-width:unset;width:100%}
+  .sm-arrow-line{flex-direction:column;align-items:flex-start}
+  .sm-arrow-line::before,.sm-arrow-line::after{width:1px;height:20px;flex:unset;background:var(--border2)}
+  .sm-connector{justify-content:center}
+  .gpa-grid,.cache-grid{grid-template-columns:1fr}
+  .stack-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
   footer{padding:2rem 1.5rem;flex-direction:column;align-items:flex-start}
+  .footer-links{flex-wrap:wrap;gap:1rem}
+}
+@media(max-width:480px){
+  .stat{flex:1 1 100%;border-right:none;border-bottom:1px solid var(--border);border-left:none!important}
+  .stat:last-child{border-bottom:none}
+  .hero{padding:7rem 1.2rem 4rem}
+  .wrapper{padding:4rem 1.2rem}
+  .coverage-module{min-width:100px;font-size:0.7rem}
+  .stack-grid{grid-template-columns:repeat(2,1fr)}
+  .test-grid{grid-template-columns:repeat(2,1fr)}
+  .cr-timeline{padding-left:2rem}
+  .cr-dot{left:-2rem;width:20px;height:20px;font-size:0.58rem}
 }
 </style>
 </head>
@@ -185,16 +326,33 @@ footer{position:relative;z-index:1;border-top:1px solid var(--border);background
   <ul class="nav-links">
     <li><a href="#features">Features</a></li>
     <li><a href="#modules">Modules</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#lifecycle">Lifecycle</a></li>
+    <li><a href="#grading">Grading</a></li>
     <li><a href="#compiler">Compiler</a></li>
+    <li><a href="#tests">Tests</a></li>
     <li><a href="#stack">Stack</a></li>
     <li><a href="/api/redoc/" class="nav-cta">API Docs →</a></li>
   </ul>
+  <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
 </nav>
 
+<div class="mobile-menu" id="mobileMenu">
+  <a href="#features">Features</a>
+  <a href="#modules">Modules</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#lifecycle">Lifecycle</a>
+  <a href="#grading">Grading</a>
+  <a href="#compiler">Compiler</a>
+  <a href="#tests">Tests</a>
+  <a href="#stack">Stack</a>
+  <a href="/api/redoc/">API Docs →</a>
+</div>
+
 <div class="hero">
-  <div class="hero-badge">Live on Azure · SSL Secured · CI/CD Active</div>
+  <div class="hero-badge">Live on Azure &middot; SSL Secured &middot; CI/CD Active</div>
   <h1>Academic<br>Management<br><em>Reimagined</em></h1>
-  <p class="hero-sub">A production-grade REST API for universities — managing students, faculty, courses, enrollments, and live multi-language code execution in isolated containers.</p>
+  <p class="hero-sub">A production-grade REST API backend for universities — role-scoped access for Admin, Faculty, and Student, with a Celery-driven semester lifecycle, bell-curve GPA engine, two-layer Redis caching, and live multi-language code execution in isolated Docker containers.</p>
   <div class="hero-actions">
     <a href="/api/redoc/" class="btn-primary">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -212,73 +370,314 @@ footer{position:relative;z-index:1;border-top:1px solid var(--border);background
 </div>
 
 <div class="stats">
-  <div class="stat reveal"><span class="stat-num">6</span><span class="stat-label">Docker Services</span></div>
-  <div class="stat reveal" style="transition-delay:.08s"><span class="stat-num">3</span><span class="stat-label">Language Compilers</span></div>
-  <div class="stat reveal" style="transition-delay:.15s"><span class="stat-num">2×</span><span class="stat-label">Compiler Replicas</span></div>
-  <div class="stat reveal" style="transition-delay:.22s"><span class="stat-num">JWT</span><span class="stat-label">Authentication</span></div>
-  <div class="stat reveal" style="transition-delay:.29s"><span class="stat-num">Redis</span><span class="stat-label">2-Layer Cache</span></div>
-  <div class="stat reveal" style="transition-delay:.36s"><span class="stat-num">SSL</span><span class="stat-label">Let's Encrypt</span></div>
+  <div class="stat reveal"><span class="stat-num">50</span><span class="stat-label">URL Routes</span></div>
+  <div class="stat reveal" style="transition-delay:.07s"><span class="stat-num">3</span><span class="stat-label">User Roles</span></div>
+  <div class="stat reveal" style="transition-delay:.14s"><span class="stat-num">443+</span><span class="stat-label">Tests Written</span></div>
+  <div class="stat reveal" style="transition-delay:.21s"><span class="stat-num">6</span><span class="stat-label">Docker Services</span></div>
+  <div class="stat reveal" style="transition-delay:.28s"><span class="stat-num">20</span><span class="stat-label">Bell Curve Threshold</span></div>
+  <div class="stat reveal" style="transition-delay:.35s"><span class="stat-num">SSL</span><span class="stat-label">Let's Encrypt</span></div>
 </div>
 
 <!-- FEATURES -->
 <div class="wrapper" id="features">
   <span class="section-label reveal">// capabilities</span>
   <h2 class="reveal">Everything a university<br>backend needs</h2>
-  <p class="section-desc reveal">Built with real production patterns — caching, async tasks, role-based access, and live sandboxed code execution.</p>
+  <p class="section-desc reveal">Built with production patterns — role-scoped permissions at object level, async task automation, Redis caching, and sandboxed code execution.</p>
   <div class="features-grid">
-    <div class="feature-card reveal"><div class="feature-icon icon-purple">🎓</div><div class="feature-title">Academic Management</div><p class="feature-desc">Full CRUD for students, faculty, courses, departments, and semester lifecycle with role-based permissions per module.</p></div>
-    <div class="feature-card reveal" style="transition-delay:.08s"><div class="feature-icon icon-teal">⚡</div><div class="feature-title">Live Code Execution</div><p class="feature-desc">Isolated compiler microservices for Python, C/C++, and Java. Each runs in its own container, sandboxed per request with timeout protection.</p></div>
-    <div class="feature-card reveal" style="transition-delay:.15s"><div class="feature-icon icon-amber">🔐</div><div class="feature-title">JWT Authentication</div><p class="feature-desc">Secure token-based auth with access and refresh tokens, configurable lifetimes, and role-aware permission classes.</p></div>
-    <div class="feature-card reveal" style="transition-delay:.05s"><div class="feature-icon icon-blue">🚀</div><div class="feature-title">Two-Layer Redis Cache</div><p class="feature-desc">Class-level cache pre-built by Celery on semester activation. Student-level cache built on demand. Dramatically reduces DB load.</p></div>
-    <div class="feature-card reveal" style="transition-delay:.1s"><div class="feature-icon icon-green">📋</div><div class="feature-title">Async Task Queue</div><p class="feature-desc">Celery workers handle cache warming, email notifications, and GPA recalculation asynchronously with Redis as the broker.</p></div>
-    <div class="feature-card reveal" style="transition-delay:.15s"><div class="feature-icon icon-red">☁️</div><div class="feature-title">Cloud Storage + CI/CD</div><p class="feature-desc">Cloudinary for media. GitHub Actions auto-deploys every push to Azure VM. Zero-downtime rebuilds with Docker Compose.</p></div>
+    <div class="feature-card reveal">
+      <div class="feature-icon icon-purple">🎓</div>
+      <div class="feature-title">Semester Lifecycle Automation</div>
+      <p class="feature-desc">Celery tasks fire at configured deadlines to transition semesters Inactive → Active → Completed, cascading status changes to allocations and enrollments automatically.</p>
+    </div>
+    <div class="feature-card reveal" style="transition-delay:.07s">
+      <div class="feature-icon icon-teal">⚡</div>
+      <div class="feature-title">Dual-Mode GPA Engine</div>
+      <p class="feature-desc">Absolute grading for small cohorts (&lt;20 students). Automatically switches to z-score bell curve normalization using population standard deviation for larger classes.</p>
+    </div>
+    <div class="feature-card reveal" style="transition-delay:.14s">
+      <div class="feature-icon icon-amber">🔐</div>
+      <div class="feature-title">Object-Level Permissions</div>
+      <p class="feature-desc">JWT auth with Django Groups (Admin / Faculty / Student). Every write endpoint enforces <code style="font-size:0.78em;color:var(--accent)">has_object_permission</code> — faculty can only modify their own allocations.</p>
+    </div>
+    <div class="feature-card reveal" style="transition-delay:.04s">
+      <div class="feature-icon icon-blue">🚀</div>
+      <div class="feature-title">Two-Layer Redis Cache</div>
+      <p class="feature-desc">Admin/faculty data warmed by Celery at semester activation (10-min TTL). Student enrollment cache built on first access with <code style="font-size:0.78em;color:var(--accent)">timeout=None</code> — bypassed on search/filter params.</p>
+    </div>
+    <div class="feature-card reveal" style="transition-delay:.09s">
+      <div class="feature-icon icon-green">📋</div>
+      <div class="feature-title">Two-Party Result Confirmation</div>
+      <p class="feature-desc">Faculty trigger result calculation via a UUID confirmation-token email flow. Admin approves; the Celery task then applies GPA, marks enrollments Completed, and stores the transcript.</p>
+    </div>
+    <div class="feature-card reveal" style="transition-delay:.14s">
+      <div class="feature-icon icon-red">☁️</div>
+      <div class="feature-title">Sandboxed Code Execution</div>
+      <p class="feature-desc">Python, C/C++, and Java each run in their own Docker container with 2 replicas. Accepts single files, multi-file uploads, and .zip archives with auto-detected entry points.</p>
+    </div>
   </div>
 </div>
+
+<div class="section-divider"></div>
 
 <!-- MODULES -->
 <div class="wrapper" id="modules">
   <span class="section-label reveal">// modules</span>
-  <h2 class="reveal">Three core modules,<br>one unified API</h2>
-  <p class="section-desc reveal">Each module handles its own domain with dedicated serializers, permissions, views, and test suites.</p>
+  <h2 class="reveal">Three role-scoped modules,<br>one unified API</h2>
+  <p class="section-desc reveal">50 URL routes across 3 domain modules. Each has its own serializers, permission classes, views, mixins, and test suite.</p>
   <div class="modules-grid">
     <div class="module-card reveal">
-      <div class="module-header"><div class="module-icon icon-purple">🛡️</div><div><div class="module-name">AdminModule</div><div class="module-tag">System Administration</div></div></div>
+      <div class="module-header"><div class="module-icon icon-purple">🛡️</div><div><div class="module-name">AdminModule</div><div class="module-tag">26 routes &middot; 339 tests &middot; 84% coverage</div></div></div>
       <div class="module-body"><div class="module-endpoints">
-        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/students/</span><span class="me-desc">Create student</span></div>
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/admin/courses/</span><span class="me-desc">List all courses</span></div>
-        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/semester/activate/</span><span class="me-desc">Activate semester</span></div>
-        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/admin/faculty/{id}/</span><span class="me-desc">Update faculty</span></div>
-        <div class="me"><span class="method method-delete">DEL</span><span class="me-path">/api/admin/department/{id}/</span><span class="me-desc">Remove department</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/faculty/</span><span class="me-desc">Create faculty</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/admin/bulk/</span><span class="me-desc">Bulk student import</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/admin/allocations/</span><span class="me-desc">Manage allocations</span></div>
+        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/admin/semesters/{id}/</span><span class="me-desc">Lifecycle control</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/admin/change-request/confirm/{token}/</span></div>
       </div></div>
     </div>
     <div class="module-card reveal" style="transition-delay:.1s">
-      <div class="module-header"><div class="module-icon icon-blue">👨‍🏫</div><div><div class="module-name">FacultyModule</div><div class="module-tag">Faculty Operations</div></div></div>
+      <div class="module-header"><div class="module-icon icon-blue">👨‍🏫</div><div><div class="module-name">FacultyModule</div><div class="module-tag">11 routes &middot; 104 tests &middot; 88% coverage</div></div></div>
       <div class="module-body"><div class="module-endpoints">
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/courses/</span><span class="me-desc">Assigned courses</span></div>
-        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/faculty/grades/</span><span class="me-desc">Submit grades</span></div>
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/students/</span><span class="me-desc">Course students</span></div>
-        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/faculty/attendance/</span><span class="me-desc">Mark attendance</span></div>
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/results/</span><span class="me-desc">Course results</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/allocations/</span><span class="me-desc">Own allocations</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/faculty/allocations/{id}/assessments/</span></div>
+        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/faculty/allocations/{id}/lectures/{id}/</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/faculty/allocations/{id}/calculate-result/</span></div>
+        <div class="me"><span class="method method-put">PUT</span><span class="me-path">/api/faculty/requests/{id}/</span><span class="me-desc">Apply results</span></div>
       </div></div>
     </div>
     <div class="module-card reveal" style="transition-delay:.2s">
-      <div class="module-header"><div class="module-icon icon-teal">🎒</div><div><div class="module-name">StudentModule</div><div class="module-tag">Student Portal</div></div></div>
+      <div class="module-header"><div class="module-icon icon-teal">🎒</div><div><div class="module-name">StudentModule</div><div class="module-tag">13 routes &middot; 95% target coverage</div></div></div>
       <div class="module-body"><div class="module-endpoints">
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/profile/</span><span class="me-desc">My profile</span></div>
-        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/student/enroll/</span><span class="me-desc">Enroll in course</span></div>
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/grades/</span><span class="me-desc">My grades + GPA</span></div>
-        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/timetable/</span><span class="me-desc">My schedule</span></div>
-        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/compiler/run/</span><span class="me-desc">Execute code</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/dashboard/</span><span class="me-desc">Stats overview</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/student/enrollments/create/</span><span class="me-desc">Self-enroll</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/enrollments/{id}/</span><span class="me-desc">Grades + assessments</span></div>
+        <div class="me"><span class="method method-get">GET</span><span class="me-path">/api/student/attendance/{id}/</span><span class="me-desc">Attendance record</span></div>
+        <div class="me"><span class="method method-post">POST</span><span class="me-path">/api/student/compilers/</span><span class="me-desc">Execute code</span></div>
       </div></div>
     </div>
   </div>
 </div>
+
+<div class="section-divider"></div>
+
+<!-- SEMESTER LIFECYCLE -->
+<div class="wrapper" id="lifecycle">
+  <span class="section-label reveal">// semester state machine</span>
+  <h2 class="reveal">Automated semester lifecycle</h2>
+  <p class="section-desc reveal">The central state machine of the system. Celery Beat fires tasks at configured deadlines — no manual intervention required. Each transition cascades through allocations and enrollments.</p>
+  <div class="sm-container reveal">
+    <div class="sm-flow">
+      <div class="sm-node">
+        <div class="sm-state inactive">
+          <div class="sm-state-name">Inactive</div>
+          <div class="sm-state-desc">semester created</div>
+        </div>
+        <div class="sm-cascade">
+          <div class="sm-cascade-item">Allocations assigned to faculty</div>
+          <div class="sm-cascade-item">Enrollment window open</div>
+          <div class="sm-cascade-item">Cache keys not yet warmed</div>
+        </div>
+      </div>
+      <div class="sm-connector">
+        <div class="sm-arrow-line">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+        <div class="sm-trigger">Celery task at<br>activation_deadline</div>
+      </div>
+      <div class="sm-node">
+        <div class="sm-state active">
+          <div class="sm-state-name">Active</div>
+          <div class="sm-state-desc">semester ongoing</div>
+        </div>
+        <div class="sm-cascade">
+          <div class="sm-cascade-item">CourseAllocation: Inactive → Ongoing</div>
+          <div class="sm-cascade-item">Enrollment: Inactive → Active</div>
+          <div class="sm-cascade-item">Redis cache warmed for all students</div>
+          <div class="sm-cascade-item">AssessmentChecked rows created</div>
+        </div>
+      </div>
+      <div class="sm-connector">
+        <div class="sm-arrow-line">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+        <div class="sm-trigger">Celery task at<br>closing_deadline</div>
+      </div>
+      <div class="sm-node">
+        <div class="sm-state completed">
+          <div class="sm-state-name">Completed</div>
+          <div class="sm-state-desc">semester closed</div>
+        </div>
+        <div class="sm-cascade">
+          <div class="sm-cascade-item">CourseAllocation: Ongoing → Completed</div>
+          <div class="sm-cascade-item">Enrollment: Active → Completed</div>
+          <div class="sm-cascade-item">GPA computed, transcript created</div>
+          <div class="sm-cascade-item">Cache invalidated</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGEREQUEST FLOW -->
+  <h2 class="reveal" style="margin-top:4rem">Result confirmation flow</h2>
+  <p class="section-desc reveal">GPA calculation is a sensitive, irreversible operation. A two-party UUID token confirmation flow ensures no accidental trigger — faculty requests, admin confirms, faculty applies.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem" class="reveal">
+    <div class="cr-timeline">
+      <div class="cr-step">
+        <div class="cr-dot">1</div>
+        <div class="cr-content">
+          <div class="cr-actor">Faculty</div>
+          <div class="cr-action">Request result calculation</div>
+          <div class="cr-detail">Hits <code style="font-size:0.78em;color:var(--accent2)">GET /api/faculty/allocations/{id}/calculate-result/</code> — creates a <code style="font-size:0.78em;color:var(--accent)">ChangeRequest</code> with a UUID token.</div>
+        </div>
+      </div>
+      <div class="cr-step">
+        <div class="cr-dot">2</div>
+        <div class="cr-content">
+          <div class="cr-actor">System (Celery)</div>
+          <div class="cr-action">Email sent to active admin</div>
+          <div class="cr-detail">Celery sends confirmation email containing a signed link to <code style="font-size:0.78em;color:var(--accent2)">/api/admin/change-request/confirm/{uuid}/</code></div>
+        </div>
+      </div>
+      <div class="cr-step">
+        <div class="cr-dot">3</div>
+        <div class="cr-content">
+          <div class="cr-actor">Admin</div>
+          <div class="cr-action">Confirms via token link</div>
+          <div class="cr-detail">ChangeRequest status flips to <span class="cr-code">confirmed</span>. Only then can the faculty apply it.</div>
+        </div>
+      </div>
+      <div class="cr-step">
+        <div class="cr-dot">4</div>
+        <div class="cr-content">
+          <div class="cr-actor">Faculty</div>
+          <div class="cr-action">Applies the change</div>
+          <div class="cr-detail">Patches <span class="cr-code">status: applied</span> — the system runs the GPA engine, marks enrollments Completed, and locks the allocation.</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;align-self:start;margin-top:4px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem">
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.8rem">ChangeRequest states</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:0.6rem"><span style="font-family:var(--mono);font-size:0.72rem;background:rgba(255,179,71,0.1);color:var(--amber);padding:0.18rem 0.6rem;border-radius:4px">pending</span><span style="font-size:0.76rem;color:var(--muted)">awaiting admin</span></div>
+          <div style="display:flex;align-items:center;gap:0.6rem"><span style="font-family:var(--mono);font-size:0.72rem;background:rgba(0,229,176,0.1);color:var(--accent2);padding:0.18rem 0.6rem;border-radius:4px">confirmed</span><span style="font-size:0.76rem;color:var(--muted)">ready to apply</span></div>
+          <div style="display:flex;align-items:center;gap:0.6rem"><span style="font-family:var(--mono);font-size:0.72rem;background:rgba(124,111,255,0.1);color:var(--accent);padding:0.18rem 0.6rem;border-radius:4px">applied</span><span style="font-size:0.76rem;color:var(--muted)">GPA computed</span></div>
+          <div style="display:flex;align-items:center;gap:0.6rem"><span style="font-family:var(--mono);font-size:0.72rem;background:rgba(255,107,138,0.1);color:var(--accent3);padding:0.18rem 0.6rem;border-radius:4px">declined</span><span style="font-size:0.76rem;color:var(--muted)">validation failed</span></div>
+          <div style="display:flex;align-items:center;gap:0.6rem"><span style="font-family:var(--mono);font-size:0.72rem;background:rgba(255,255,255,0.05);color:var(--muted);padding:0.18rem 0.6rem;border-radius:4px">expired</span><span style="font-size:0.76rem;color:var(--muted)">token expired</span></div>
+        </div>
+      </div>
+      <div style="background:rgba(255,107,138,0.05);border:1px solid rgba(255,107,138,0.15);border-radius:10px;padding:1.2rem 1.4rem;font-size:0.8rem;color:var(--muted);line-height:1.65">
+        <span style="color:var(--accent3);font-weight:600">Guarded against: </span>No enrollments, null obtained marks, or already-calculated results — any of these decline the request automatically and return 400.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+
+<!-- GPA ALGORITHM -->
+<div class="wrapper" id="grading">
+  <span class="section-label reveal">// grading engine</span>
+  <h2 class="reveal">Dual-mode GPA calculation</h2>
+  <p class="section-desc reveal">The system selects the grading method based on enrollment count. Small cohorts get absolute thresholds; large classes use population z-score normalization to account for assessment difficulty variance.</p>
+  <div class="gpa-grid reveal">
+    <div class="gpa-card absolute">
+      <div class="gpa-card-label">Mode A</div>
+      <div class="gpa-card-title">Absolute Grading</div>
+      <div class="gpa-card-condition">When enrolled students &lt; 20</div>
+      <div class="gpa-formula">GPA = fixed_threshold(weighted_score)</div>
+      <table class="gpa-table">
+        <thead><tr><th>Score</th><th>GPA</th></tr></thead>
+        <tbody>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 85%</td><td>4.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 80%</td><td>3.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 75%</td><td>3.33</td></tr>
+          <tr><td><span class="gpa-pip" style="background:#60a5fa"></span>≥ 70%</td><td>3.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:#60a5fa"></span>≥ 65%</td><td>2.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ 61%</td><td>2.33</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ 58%</td><td>2.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ 55%</td><td>1.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ 50%</td><td>1.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent3)"></span>&lt; 50%</td><td>0.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="gpa-card bellcurve">
+      <div class="gpa-card-label">Mode B</div>
+      <div class="gpa-card-title">Bell Curve (z-score)</div>
+      <div class="gpa-card-condition">When enrolled students ≥ 20 — uses <code style="font-size:0.78em">statistics.pstdev()</code></div>
+      <div class="gpa-formula">z = (score &minus; &mu;) / &sigma; &nbsp;&nbsp;then&nbsp;&nbsp; GPA = band(z)</div>
+      <table class="gpa-table">
+        <thead><tr><th>z-score</th><th>GPA</th></tr></thead>
+        <tbody>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 1.5σ</td><td>4.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 1.0σ</td><td>3.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent2)"></span>≥ 0.5σ</td><td>3.33</td></tr>
+          <tr><td><span class="gpa-pip" style="background:#60a5fa"></span>≥ 0.0σ</td><td>3.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:#60a5fa"></span>≥ &minus;0.5σ</td><td>2.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ &minus;1.0σ</td><td>2.33</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ &minus;1.5σ</td><td>2.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ &minus;2.0σ</td><td>1.67</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--amber)"></span>≥ &minus;2.5σ</td><td>1.33</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent3)"></span>≥ &minus;3.0σ</td><td>1.00</td></tr>
+          <tr><td><span class="gpa-pip" style="background:var(--accent3)"></span>&lt; &minus;3.0σ</td><td>0.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="margin-top:1.2rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem 1.6rem;font-size:0.83rem;color:var(--muted);line-height:1.7" class="reveal">
+    <strong style="color:var(--text)">Weighted score formula: </strong>
+    Each student's score = <code style="color:var(--accent2);font-size:0.81em">Σ (obtained_marks / total_marks × weightage)</code> across all assessments in the allocation. Assessments must sum to weightage = 100 (enforced at creation time).
+  </div>
+</div>
+
+<div class="section-divider"></div>
+
+<!-- CACHE ARCHITECTURE -->
+<div class="wrapper">
+  <span class="section-label reveal">// cache architecture</span>
+  <h2 class="reveal">Two-layer Redis caching</h2>
+  <p class="section-desc reveal">Cache is populated proactively by Celery tasks — not reactively on first request. Writes always invalidate the affected key before triggering the cache task to rebuild.</p>
+  <div class="cache-grid reveal">
+    <div class="cache-card l1">
+      <span class="cache-layer-badge">Layer 1 — Admin &amp; Faculty</span>
+      <div class="cache-title">Celery-warmed, write-invalidated</div>
+      <div class="cache-desc">Populated at semester activation by <code style="font-size:0.78em;color:var(--accent2)">cache_faculty_data_task</code> and <code style="font-size:0.78em;color:var(--accent2)">cache_student_data_task</code>. Every write hits <code style="font-size:0.78em;color:var(--accent2)">cache.delete(key)</code> then re-enqueues the task.</div>
+      <div class="cache-keys">
+        <div class="cache-key">admin:faculty_list</div>
+        <div class="cache-key">admin:faculty:department:{dept_id}</div>
+        <div class="cache-key">admin:faculty:designation:{key}</div>
+        <div class="cache-key">faculty:{username}:allocations</div>
+        <div class="cache-key">faculty:{username}:{allocation_id}:assessments</div>
+      </div>
+      <div class="cache-ttl">TTL: <strong>10 min</strong> (admin) &nbsp;&middot;&nbsp; <strong>5 min</strong> (faculty)</div>
+    </div>
+    <div class="cache-card l2">
+      <span class="cache-layer-badge">Layer 2 — Student Enrollment</span>
+      <div class="cache-title">On-demand, never expires</div>
+      <div class="cache-desc">Built on first access after login. Stores the student's available allocations with enrollment confirmation state. Set with <code style="font-size:0.78em;color:var(--accent)">timeout=None</code> — persists until explicitly cleared on enrollment action.</div>
+      <div class="cache-keys">
+        <div class="cache-key">enrollments:{class_id}:semester:allocations</div>
+        <div class="cache-key">enrollments:{student_id}:{class_id}:data</div>
+        <div class="cache-key">student:dashboard:{username}</div>
+        <div class="cache-key">faculty:dashboard:{username}</div>
+      </div>
+      <div class="cache-ttl">TTL: <strong>None</strong> (enrollment data) &nbsp;&middot;&nbsp; <strong>5 min</strong> (dashboards)</div>
+    </div>
+  </div>
+  <div class="cache-bypass reveal" style="margin-top:14px">
+    <span class="cache-bypass-icon">⚠</span>
+    <span><strong style="color:var(--accent3)">Cache bypass: </strong>Any request with search or ordering query parameters skips the cache entirely and hits the database directly — filter logic runs on the full queryset, not on the cached list.</span>
+  </div>
+</div>
+
+<div class="section-divider"></div>
 
 <!-- COMPILER -->
 <div class="wrapper" id="compiler">
   <span class="section-label reveal">// compiler engine</span>
   <h2 class="reveal">Multi-language code<br>execution engine</h2>
-  <p class="section-desc reveal">Each language runs in its own isolated Docker container with 2 replicas for load balancing. Upload a file, get output back — with timeout and stdin support.</p>
+  <p class="section-desc reveal">Each language runs in its own isolated Docker container with 2 replicas. Upload a single file, a multi-file project, or a .zip archive — the system detects the entry point automatically.</p>
   <div class="compiler-showcase">
     <div class="compiler-tabs reveal-left">
       <div class="compiler-tab active" data-lang="python">
@@ -322,9 +721,7 @@ fibonacci(<span class="num">10</span>)
     <span class="kw">for</span> (<span class="kw">int</span> i<span class="op">=</span><span class="num">0</span>; i<span class="op">&lt;</span>n<span class="op">-</span><span class="num">1</span>; i<span class="op">++</span>)
         <span class="kw">for</span> (<span class="kw">int</span> j<span class="op">=</span><span class="num">0</span>; j<span class="op">&lt;</span>n<span class="op">-</span>i<span class="op">-</span><span class="num">1</span>; j<span class="op">++</span>)
             <span class="kw">if</span> (arr[j] <span class="op">&gt;</span> arr[j<span class="op">+</span><span class="num">1</span>]) {
-                <span class="kw">int</span> t<span class="op">=</span>arr[j];
-                arr[j]<span class="op">=</span>arr[j<span class="op">+</span><span class="num">1</span>];
-                arr[j<span class="op">+</span><span class="num">1</span>]<span class="op">=</span>t;
+                <span class="kw">int</span> t<span class="op">=</span>arr[j]; arr[j]<span class="op">=</span>arr[j<span class="op">+</span><span class="num">1</span>]; arr[j<span class="op">+</span><span class="num">1</span>]<span class="op">=</span>t;
             }
 }
 <span class="kw">int</span> <span class="fn">main</span>(){
@@ -342,8 +739,7 @@ fibonacci(<span class="num">10</span>)
     <span class="kw">while</span>(l<span class="op">&lt;=</span>r){
       <span class="kw">int</span> m<span class="op">=</span>(l<span class="op">+</span>r)<span class="op">/</span><span class="num">2</span>;
       <span class="kw">if</span>(a[m]<span class="op">==</span>t) <span class="kw">return</span> m;
-      <span class="kw">if</span>(a[m]<span class="op">&lt;</span>t) l<span class="op">=</span>m<span class="op">+</span><span class="num">1</span>;
-      <span class="kw">else</span> r<span class="op">=</span>m<span class="op">-</span><span class="num">1</span>;
+      <span class="kw">if</span>(a[m]<span class="op">&lt;</span>t) l<span class="op">=</span>m<span class="op">+</span><span class="num">1</span>; <span class="kw">else</span> r<span class="op">=</span>m<span class="op">-</span><span class="num">1</span>;
     }
     <span class="kw">return</span> <span class="op">-</span><span class="num">1</span>;
   }
@@ -357,41 +753,210 @@ fibonacci(<span class="num">10</span>)
       </div>
     </div>
   </div>
+  <div class="compiler-features reveal">
+    <div class="cf-item">
+      <div class="cf-icon">📄</div>
+      <div><div class="cf-title">Single file</div><div class="cf-desc">.py, .c, .cpp accepted directly — written to a uuid temp folder and dispatched.</div></div>
+    </div>
+    <div class="cf-item">
+      <div class="cf-icon">🗜️</div>
+      <div><div class="cf-title">.zip archives</div><div class="cf-desc">Extracted to temp dir. System searches for <code style="font-size:0.78em">main.*</code> to determine language and entry point.</div></div>
+    </div>
+    <div class="cf-item">
+      <div class="cf-icon">📦</div>
+      <div><div class="cf-title">Multi-file upload</div><div class="cf-desc">Multiple files submitted together. Must include a <code style="font-size:0.78em">main.*</code> — all files written, then compiled together.</div></div>
+    </div>
+    <div class="cf-item">
+      <div class="cf-icon">⌨️</div>
+      <div><div class="cf-title">stdin support</div><div class="cf-desc">Optional <code style="font-size:0.78em">input_list</code> field written to <code style="font-size:0.78em">input.txt</code>, piped as stdin. 15-second execution timeout.</div></div>
+    </div>
+  </div>
 </div>
+
+<div class="section-divider"></div>
 
 <!-- TEST STATS -->
-<div class="wrapper">
+<div class="wrapper" id="tests">
   <span class="section-label reveal">// test suite</span>
   <h2 class="reveal">Tested, not assumed</h2>
-  <p class="section-desc reveal">Comprehensive pytest test suite covering API endpoints, serializers, views, caching logic, and Celery tasks across all modules.</p>
+  <p class="section-desc reveal">pytest suite with Django DB transactions, Celery eager execution, and Redis cache isolation. Tests cover views, serializers, permissions, cache logic, task side-effects, and edge cases.</p>
   <div class="test-grid">
-    <div class="test-card reveal"><span class="test-num" style="color:var(--accent2)">40+</span><span class="test-label">Total Tests</span></div>
-    <div class="test-card reveal" style="transition-delay:.08s"><span class="test-num" style="color:var(--accent)">3</span><span class="test-label">Modules Covered</span></div>
-    <div class="test-card reveal" style="transition-delay:.15s"><span class="test-num" style="color:var(--amber)">pytest</span><span class="test-label">Test Framework</span></div>
-    <div class="test-card reveal" style="transition-delay:.22s"><span class="test-num" style="color:var(--accent3)">xfail</span><span class="test-label">Known Issues Tracked</span></div>
+    <div class="test-card reveal"><span class="test-num" style="color:var(--accent2)">443+</span><span class="test-label">Total Tests</span></div>
+    <div class="test-card reveal" style="transition-delay:.07s"><span class="test-num" style="color:var(--accent)">339</span><span class="test-label">Admin Tests</span></div>
+    <div class="test-card reveal" style="transition-delay:.14s"><span class="test-num" style="color:var(--blue)">104</span><span class="test-label">Faculty Tests</span></div>
+    <div class="test-card reveal" style="transition-delay:.21s"><span class="test-num" style="color:var(--accent3)">xfail</span><span class="test-label">Bugs Tracked</span></div>
   </div>
   <div class="coverage-bars reveal">
-    <div class="coverage-row"><span class="coverage-module">AdminModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="82" style="width:0%;background:var(--accent)"></div></div><span class="coverage-pct">82%</span></div>
-    <div class="coverage-row"><span class="coverage-module">FacultyModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="78" style="width:0%;background:var(--accent2)"></div></div><span class="coverage-pct">78%</span></div>
-    <div class="coverage-row"><span class="coverage-module">StudentModule</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="65" style="width:0%;background:var(--amber)"></div></div><span class="coverage-pct">65%</span></div>
-    <div class="coverage-row"><span class="coverage-module">Models</span><div class="coverage-bar-wrap"><div class="coverage-bar" data-width="90" style="width:0%;background:var(--accent3)"></div></div><span class="coverage-pct">90%</span></div>
+    <div class="coverage-row">
+      <span class="coverage-module">AdminModule</span>
+      <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="84" style="width:0%;background:var(--accent)"></div></div>
+      <span class="coverage-pct">84%</span>
+    </div>
+    <div class="coverage-row">
+      <span class="coverage-module">FacultyModule</span>
+      <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="88" style="width:0%;background:var(--accent2)"></div></div>
+      <span class="coverage-pct">88%</span>
+    </div>
+    <div class="coverage-row">
+      <span class="coverage-module">StudentModule</span>
+      <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="95" style="width:0%;background:var(--blue)"></div></div>
+      <span class="coverage-pct">95% <span style="font-size:0.6rem;color:var(--muted)">target</span></span>
+    </div>
+    <div class="coverage-row">
+      <span class="coverage-module">Compilers</span>
+      <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="95" style="width:0%;background:var(--amber)"></div></div>
+      <span class="coverage-pct">95% <span style="font-size:0.6rem;color:var(--muted)">target</span></span>
+    </div>
+    <div class="coverage-row">
+      <span class="coverage-module">Models</span>
+      <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="90" style="width:0%;background:var(--accent3)"></div></div>
+      <span class="coverage-pct">90%</span>
+    </div>
   </div>
 </div>
 
-<!-- ARCHITECTURE -->
-<div class="wrapper">
-  <span class="section-label reveal">// architecture</span>
-  <h2 class="reveal">Request lifecycle</h2>
-  <p class="section-desc reveal">Every request flows through a secure, optimized pipeline from client to response.</p>
-  <div class="arch-flow reveal">
-    <div class="arch-step"><span class="arch-step-num">01</span><div class="arch-step-name">Client</div><div class="arch-step-desc">HTTPS request</div></div>
-    <div class="arch-step"><span class="arch-step-num">02</span><div class="arch-step-name">Nginx</div><div class="arch-step-desc">SSL + reverse proxy</div></div>
-    <div class="arch-step"><span class="arch-step-num">03</span><div class="arch-step-name">Gunicorn</div><div class="arch-step-desc">WSGI · 3 workers</div></div>
-    <div class="arch-step"><span class="arch-step-num">04</span><div class="arch-step-name">Django DRF</div><div class="arch-step-desc">Auth · permissions</div></div>
-    <div class="arch-step"><span class="arch-step-num">05</span><div class="arch-step-name">Redis / MySQL</div><div class="arch-step-desc">Cache or DB query</div></div>
-    <div class="arch-step"><span class="arch-step-num">06</span><div class="arch-step-name">Response</div><div class="arch-step-desc">JSON · paginated</div></div>
-  </div>
+<div class="section-divider"></div>
+
+<!-- SYSTEM ARCHITECTURE -->
+<div class="wrapper" id="architecture">
+  <span class="section-label reveal">// system architecture</span>
+  <h2 class="reveal">Infrastructure &amp; service map</h2>
+  <p class="section-desc reveal">6 services containerized with Docker Compose on Azure. Django routes code-execution requests to isolated compiler microservices over HTTP. Redis doubles as the application cache and Celery's message broker.</p>
+  <div class="arch-v2-wrapper reveal">
+    <div class="arch-v2">
+
+      <!-- SVG: connection lines + animated data-flow packets -->
+      <!-- ViewBox: 0 0 1000 480. All node coords below derived from this space. -->
+      <svg class="arch-v2-svg" viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="gp"><feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="gt"><feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="gr"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+
+        <!-- Connection lines -->
+        <path id="p0" d="M 500,78 L 500,118"              stroke="rgba(124,111,255,0.4)"  stroke-width="1.5" fill="none"/>
+        <path id="p1" d="M 500,176 L 500,228"             stroke="rgba(124,111,255,0.4)"  stroke-width="1.5" fill="none"/>
+        <path id="p2" d="M 400,292 C 400,336 125,336 125,370"   stroke="rgba(0,229,176,0.35)"  stroke-width="1.5" fill="none"/>
+        <path id="p3" d="M 468,292 C 468,336 340,336 340,370"   stroke="rgba(220,56,45,0.38)"  stroke-width="1.5" fill="none"/>
+        <path id="p4" d="M 535,292 C 535,336 555,336 555,370"   stroke="rgba(55,180,74,0.38)"  stroke-width="1.5" fill="none"/>
+        <path id="p5" d="M 612,292 C 612,336 820,336 820,370"   stroke="rgba(255,107,138,0.3)" stroke-width="1.5" fill="none"/>
+        <path id="p6" d="M 430,399 L 465,399"             stroke="rgba(220,56,45,0.45)"  stroke-width="1.5" fill="none" stroke-dasharray="5 3"/>
+
+        <!-- Subtle horizontal bus line at y=336 -->
+        <line x1="125" y1="336" x2="820" y2="336" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+
+        <!-- Connection labels -->
+        <text x="512" y="100"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(124,111,255,0.55)" letter-spacing="0.1em">HTTPS</text>
+        <text x="512" y="204"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(124,111,255,0.45)" letter-spacing="0.08em">proxy</text>
+        <text x="218" y="344"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(0,229,176,0.55)"   letter-spacing="0.07em">ORM</text>
+        <text x="390" y="344"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(220,56,45,0.55)"   letter-spacing="0.07em">Cache</text>
+        <text x="536" y="344"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(55,180,74,0.55)"   letter-spacing="0.07em">Tasks</text>
+        <text x="698" y="344"  font-family="'DM Mono',monospace" font-size="10" fill="rgba(255,107,138,0.55)" letter-spacing="0.07em">HTTP</text>
+        <text x="432" y="392"  font-family="'DM Mono',monospace" font-size="9"  fill="rgba(220,56,45,0.6)"    letter-spacing="0.07em">Broker</text>
+
+        <!-- Animated data-flow dots -->
+        <circle r="4" fill="#7c6fff" filter="url(#gp)" opacity="0.9">
+          <animateMotion dur="1.7s" repeatCount="indefinite"><mpath href="#p0"/></animateMotion>
+        </circle>
+        <circle r="4" fill="#7c6fff" filter="url(#gp)" opacity="0.9">
+          <animateMotion dur="1.7s" repeatCount="indefinite" begin="0.65s"><mpath href="#p1"/></animateMotion>
+        </circle>
+        <circle r="3.5" fill="#00e5b0" filter="url(#gt)" opacity="0.9">
+          <animateMotion dur="2.4s" repeatCount="indefinite" begin="0.3s"><mpath href="#p2"/></animateMotion>
+        </circle>
+        <circle r="3.5" fill="#dc382d" filter="url(#gr)" opacity="0.9">
+          <animateMotion dur="2.2s" repeatCount="indefinite" begin="1.0s"><mpath href="#p3"/></animateMotion>
+        </circle>
+        <circle r="3.5" fill="#37b44a" opacity="0.9">
+          <animateMotion dur="2.3s" repeatCount="indefinite" begin="0.5s"><mpath href="#p4"/></animateMotion>
+        </circle>
+        <circle r="3.5" fill="#ff6b8a" opacity="0.85">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="1.3s"><mpath href="#p5"/></animateMotion>
+        </circle>
+        <circle r="2.5" fill="#dc382d" opacity="0.75">
+          <animateMotion dur="1.1s" repeatCount="indefinite" begin="0.8s"><mpath href="#p6"/></animateMotion>
+        </circle>
+      </svg>
+
+      <!--
+        Node positions as % of the 1000×480 viewBox.
+        left  = box_left_x  / 1000 * 100
+        top   = box_top_y   / 480  * 100
+        width = box_width   / 1000 * 100
+      -->
+
+      <!-- Client  (box 340,22 → 660,78) -->
+      <div class="arch-v2-node" style="left:34%;top:4.6%;width:32%;transition-delay:0s">
+        <div class="arch-v2-icon" style="background:rgba(96,165,250,0.1)">🌐</div>
+        <div>
+          <div class="arch-v2-name">Client Browser</div>
+          <div class="arch-v2-sub">REST API · HTTPS / 443</div>
+        </div>
+        <span class="arch-v2-badge ext-badge">External</span>
+      </div>
+
+      <!-- Nginx  (box 310,120 → 690,176) -->
+      <div class="arch-v2-node" style="left:31%;top:25%;width:38%;transition-delay:0.1s">
+        <div class="arch-v2-icon" style="background:rgba(0,150,57,0.1)"><i class="devicon-nginx-original" style="color:#009639;font-size:1.1rem"></i></div>
+        <div>
+          <div class="arch-v2-name">Nginx</div>
+          <div class="arch-v2-sub">SSL termination · Reverse proxy · Rate limiting</div>
+        </div>
+      </div>
+
+      <!-- Django  (box 250,230 → 750,292) -->
+      <div class="arch-v2-node node-main" style="left:25%;top:47.9%;width:50%;transition-delay:0.2s">
+        <div class="arch-v2-icon" style="background:rgba(68,183,139,0.12)"><i class="devicon-django-plain" style="color:#44b78b;font-size:1.15rem"></i></div>
+        <div>
+          <div class="arch-v2-name">Django 5.2 + Gunicorn</div>
+          <div class="arch-v2-sub">JWT Auth · DRF · 50 Routes · 3 workers · object-level permissions</div>
+        </div>
+      </div>
+
+      <!-- MySQL  (box 15,372 → 235,426) -->
+      <div class="arch-v2-node" style="left:1.5%;top:77.5%;width:22%;transition-delay:0.35s">
+        <div class="arch-v2-icon" style="background:rgba(0,117,143,0.1)"><i class="devicon-mysql-plain" style="color:#00758f;font-size:1.1rem"></i></div>
+        <div>
+          <div class="arch-v2-name">MySQL 8</div>
+          <div class="arch-v2-sub">Primary database</div>
+        </div>
+      </div>
+
+      <!-- Redis  (box 250,372 → 430,426) -->
+      <div class="arch-v2-node" style="left:25%;top:77.5%;width:18%;transition-delay:0.45s">
+        <div class="arch-v2-icon" style="background:rgba(220,56,45,0.1)"><i class="devicon-redis-plain" style="color:#dc382d;font-size:1.1rem"></i></div>
+        <div>
+          <div class="arch-v2-name">Redis</div>
+          <div class="arch-v2-sub">Cache + broker</div>
+        </div>
+      </div>
+
+      <!-- Celery  (box 465,372 → 645,426) -->
+      <div class="arch-v2-node" style="left:46.5%;top:77.5%;width:18%;transition-delay:0.55s">
+        <div class="arch-v2-icon" style="background:rgba(55,180,74,0.1)">
+          <svg width="18" height="18" viewBox="0 0 100 100" fill="none"><path d="M50 15L85 34V66L50 85L15 66V34Z" stroke="#37b44a" stroke-width="8" fill="none"/><circle cx="50" cy="50" r="14" fill="#37b44a"/></svg>
+        </div>
+        <div>
+          <div class="arch-v2-name">Celery</div>
+          <div class="arch-v2-sub">Task workers</div>
+        </div>
+      </div>
+
+      <!-- Compilers  (box 690,372 → 950,426) -->
+      <div class="arch-v2-node" style="left:69%;top:77.5%;width:26%;transition-delay:0.65s">
+        <div class="arch-v2-icon" style="background:rgba(255,107,138,0.1)">🖥️</div>
+        <div>
+          <div class="arch-v2-name">Compilers</div>
+          <div class="arch-v2-sub">Python · C/C++ · Java · Docker</div>
+        </div>
+      </div>
+
+    </div><!-- /.arch-v2 -->
+  </div><!-- /.arch-v2-wrapper -->
 </div>
+
+<div class="section-divider"></div>
 
 <!-- STACK -->
 <div class="wrapper" id="stack">
@@ -399,63 +964,95 @@ fibonacci(<span class="num">10</span>)
   <h2 class="reveal">Built with the right tools</h2>
   <p class="section-desc reveal">Production-grade technologies, containerized and orchestrated on Azure.</p>
   <div class="stack-grid">
-    <div class="stack-item reveal"><div class="stack-dot" style="background:#092e20;border:2px solid #44b78b"></div><span class="stack-name">Django 5.2</span><span class="stack-role">Web framework</span></div>
-    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#1a1a2e;border:2px solid #7c6fff"></div><span class="stack-name">DRF</span><span class="stack-role">REST API</span></div>
-    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#1a1a1a;border:2px solid #00758f"></div><span class="stack-name">MySQL 8</span><span class="stack-role">Database</span></div>
-    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a0a0a;border:2px solid #dc382d"></div><span class="stack-name">Redis</span><span class="stack-role">Cache + broker</span></div>
-    <div class="stack-item reveal" style="transition-delay:.2s"><div class="stack-dot" style="background:#0a1a0a;border:2px solid #37814a"></div><span class="stack-name">Celery</span><span class="stack-role">Task queue</span></div>
-    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#1a1a0a;border:2px solid #0db7ed"></div><span class="stack-name">Docker</span><span class="stack-role">Containers</span></div>
-    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#0a0a1a;border:2px solid #009639"></div><span class="stack-name">Nginx</span><span class="stack-role">Reverse proxy</span></div>
-    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a1a1a;border:2px solid #f7931e"></div><span class="stack-name">Cloudinary</span><span class="stack-role">File storage</span></div>
-    <div class="stack-item reveal" style="transition-delay:.2s"><div class="stack-dot" style="background:#1a0a1a;border:2px solid #00e5b0"></div><span class="stack-name">FastAPI</span><span class="stack-role">Compiler APIs</span></div>
-    <div class="stack-item reveal" style="transition-delay:.05s"><div class="stack-dot" style="background:#0a0a0a;border:2px solid #aaaaaa"></div><span class="stack-name">Azure VM</span><span class="stack-role">Cloud hosting</span></div>
-    <div class="stack-item reveal" style="transition-delay:.1s"><div class="stack-dot" style="background:#0a1a0a;border:2px solid #2088ff"></div><span class="stack-name">GitHub Actions</span><span class="stack-role">CI/CD</span></div>
-    <div class="stack-item reveal" style="transition-delay:.15s"><div class="stack-dot" style="background:#1a1a0a;border:2px solid #003a70"></div><span class="stack-name">Let's Encrypt</span><span class="stack-role">SSL/TLS</span></div>
+    <div class="stack-item reveal" style="--stack-accent:rgba(68,183,139,0.1)">
+      <div class="stack-icon"><i class="devicon-django-plain" style="color:#44b78b"></i></div>
+      <span class="stack-name">Django 5.2</span><span class="stack-role">Web framework</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.04s;--stack-accent:rgba(124,111,255,0.1)">
+      <div class="stack-icon" style="background:rgba(124,111,255,0.1);border-radius:10px"><span style="font-family:var(--mono);font-size:0.6rem;font-weight:600;color:#7c6fff">DRF</span></div>
+      <span class="stack-name">DRF</span><span class="stack-role">REST API layer</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.08s;--stack-accent:rgba(0,117,143,0.1)">
+      <div class="stack-icon"><i class="devicon-mysql-plain" style="color:#00758f"></i></div>
+      <span class="stack-name">MySQL 8</span><span class="stack-role">Database</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.12s;--stack-accent:rgba(220,56,45,0.1)">
+      <div class="stack-icon"><i class="devicon-redis-plain" style="color:#dc382d"></i></div>
+      <span class="stack-name">Redis</span><span class="stack-role">Cache + broker</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.16s;--stack-accent:rgba(55,180,74,0.1)">
+      <div class="stack-icon" style="background:rgba(55,180,74,0.1);border-radius:10px">
+        <svg width="22" height="22" viewBox="0 0 100 100" fill="none"><path d="M50 15L85 34V66L50 85L15 66V34Z" stroke="#37b44a" stroke-width="6" fill="none"/><circle cx="50" cy="50" r="12" fill="#37b44a"/></svg>
+      </div>
+      <span class="stack-name">Celery</span><span class="stack-role">Task queue</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.04s;--stack-accent:rgba(13,183,237,0.1)">
+      <div class="stack-icon"><i class="devicon-docker-plain" style="color:#0db7ed"></i></div>
+      <span class="stack-name">Docker</span><span class="stack-role">Containers</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.08s;--stack-accent:rgba(0,150,57,0.1)">
+      <div class="stack-icon"><i class="devicon-nginx-original" style="color:#009639"></i></div>
+      <span class="stack-name">Nginx</span><span class="stack-role">Reverse proxy</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.12s;--stack-accent:rgba(52,72,197,0.1)">
+      <div class="stack-icon" style="background:rgba(52,72,197,0.12);border-radius:10px">
+        <svg width="22" height="22" viewBox="0 0 80 80" fill="none"><path d="M40 8C22 8 8 22 8 40C8 56 20 69 36 72L40 60L44 72C60 69 72 56 72 40C72 22 58 8 40 8Z" fill="#3448c5" opacity="0.9"/><circle cx="40" cy="40" r="10" fill="white" opacity="0.9"/></svg>
+      </div>
+      <span class="stack-name">Cloudinary</span><span class="stack-role">File storage</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.16s;--stack-accent:rgba(0,150,136,0.1)">
+      <div class="stack-icon"><i class="devicon-fastapi-plain" style="color:#009688"></i></div>
+      <span class="stack-name">FastAPI</span><span class="stack-role">Compiler APIs</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.04s;--stack-accent:rgba(0,120,212,0.1)">
+      <div class="stack-icon"><i class="devicon-azure-plain" style="color:#0078d4"></i></div>
+      <span class="stack-name">Azure VM</span><span class="stack-role">Cloud hosting</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.08s;--stack-accent:rgba(32,136,255,0.1)">
+      <div class="stack-icon"><i class="devicon-github-original" style="color:#e0e0e0"></i></div>
+      <span class="stack-name">GitHub Actions</span><span class="stack-role">CI/CD</span>
+    </div>
+    <div class="stack-item reveal" style="transition-delay:.12s;--stack-accent:rgba(0,58,112,0.1)">
+      <div class="stack-icon" style="background:rgba(0,88,163,0.12);border-radius:10px">
+        <svg width="20" height="20" viewBox="0 0 60 60" fill="none"><circle cx="30" cy="30" r="26" stroke="#003a70" stroke-width="4" fill="none"/><path d="M18 30L30 12L42 30L30 48Z" fill="#0058a3" opacity="0.9"/><circle cx="30" cy="30" r="7" fill="#003a70"/></svg>
+      </div>
+      <span class="stack-name">Let's Encrypt</span><span class="stack-role">SSL/TLS</span>
+    </div>
   </div>
 </div>
 
 <footer>
   <div class="footer-brand">Nexus<span>API</span></div>
   <ul class="footer-links">
-    <li><a href="/api/schema/swagger-ui/">Swagger UI</a></li>
-    <li><a href="/api/schema/redoc/">ReDoc</a></li>
-    <li><a href="https://github.com/HasnatAkram" target="_blank">GitHub</a></li>
+    <li><a href="/api/docs/">Swagger UI</a></li>
+    <li><a href="/api/redoc/">ReDoc</a></li>
+    <li><a href="https://github.com/Hasnat056" target="_blank">GitHub</a></li>
   </ul>
-  <span class="footer-copy">Built by Hasnat Akram · Namal University · 2025</span>
+  <span class="footer-copy">Built by Hasnat Akram &middot; Namal University &middot; 2025</span>
 </footer>
 
 <script>
-const canvas=document.getElementById('particles');
-const ctx=canvas.getContext('2d');
+// PARTICLES
+const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
 let W,H,pts=[];
 function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
 resize();window.addEventListener('resize',resize);
-function Pt(){this.x=Math.random()*W;this.y=Math.random()*H;this.vx=(Math.random()-.5)*.3;this.vy=(Math.random()-.5)*.3;this.r=Math.random()*1.5+.5;this.alpha=Math.random()*.35+.1;this.col=Math.random()>.5?'124,111,255':'0,229,176'}
-for(let i=0;i<80;i++)pts.push(new Pt());
+function Pt(){this.x=Math.random()*W;this.y=Math.random()*H;this.vx=(Math.random()-.5)*.28;this.vy=(Math.random()-.5)*.28;this.r=Math.random()*1.4+.4;this.alpha=Math.random()*.28+.07;this.col=Math.random()>.5?'124,111,255':'0,229,176'}
+for(let i=0;i<70;i++)pts.push(new Pt());
 function draw(){
   ctx.clearRect(0,0,W,H);
-  pts.forEach(p=>{
-    p.x+=p.vx;p.y+=p.vy;
-    if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-    ctx.fillStyle=`rgba(${p.col},${p.alpha})`;ctx.fill();
-  });
-  for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
-    const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);
-    if(d<130){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);ctx.strokeStyle=`rgba(124,111,255,${.07*(1-d/130)})`;ctx.lineWidth=.5;ctx.stroke()}
-  }
+  pts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=`rgba(${p.col},${p.alpha})`;ctx.fill()});
+  for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<120){ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);ctx.strokeStyle=`rgba(124,111,255,${.06*(1-d/120)})`;ctx.lineWidth=.5;ctx.stroke()}}
   requestAnimationFrame(draw);
 }
 draw();
 
-// SCROLL REVEAL
-const obs=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')}),{threshold:0.1});
+// REVEAL
+const obs=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')}),{threshold:0.07});
 document.querySelectorAll('.reveal,.reveal-left,.reveal-right').forEach(el=>obs.observe(el));
 
 // COVERAGE BARS
-const barObs=new IntersectionObserver(entries=>entries.forEach(e=>{
-  if(e.isIntersecting)e.target.querySelectorAll('.coverage-bar').forEach(b=>{setTimeout(()=>{b.style.width=b.getAttribute('data-width')+'%'},200)});
-}),{threshold:0.3});
+const barObs=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.querySelectorAll('.coverage-bar').forEach(b=>{setTimeout(()=>{b.style.width=b.getAttribute('data-width')+'%'},150)})}),{threshold:0.25});
 document.querySelectorAll('.coverage-bars').forEach(el=>barObs.observe(el));
 
 // COMPILER TABS
@@ -471,6 +1068,18 @@ document.querySelectorAll('.compiler-tab').forEach(tab=>{
     document.getElementById('code-filename').textContent=filenames[lang];
   });
 });
+
+// ARCH DIAGRAM ENTRANCE
+const archV2=document.querySelector('.arch-v2');
+if(archV2){
+  const aObs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){archV2.classList.add('entered');aObs.disconnect()}}),{threshold:0.12});
+  aObs.observe(archV2);
+}
+
+// HAMBURGER
+const hamburger=document.getElementById('hamburger'),mobileMenu=document.getElementById('mobileMenu');
+hamburger.addEventListener('click',()=>{hamburger.classList.toggle('open');mobileMenu.classList.toggle('open');document.body.style.overflow=mobileMenu.classList.contains('open')?'hidden':''});
+mobileMenu.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{hamburger.classList.remove('open');mobileMenu.classList.remove('open');document.body.style.overflow=''}));
 </script>
 </body>
 </html>

@@ -13,7 +13,7 @@
   --bg:#07070e;--surface:#0f0f1a;--surface2:#161625;--surface3:#1c1c2e;
   --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.13);--border3:rgba(255,255,255,0.2);
   --text:#eeedf5;--muted:#7a7990;--muted2:#555468;
-  --accent:#7c6fff;--accent2:#00e5b0;--accent3:#ff6b8a;--amber:#ffb347;--blue:#60a5fa;
+  --accent:#7c6fff;--accent2: #93edd9;--accent3:#ff6b8a;--amber:#ffb347;--blue:#60a5fa;
   --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--display:'Syne',sans-serif;
   --radius:14px;--radius-sm:8px;
 }
@@ -781,10 +781,10 @@ fibonacci(<span class="num">10</span>)
   <h2 class="reveal">Tested, not assumed</h2>
   <p class="section-desc reveal">pytest suite with Django DB transactions, Celery eager execution, and Redis cache isolation. Tests cover views, serializers, permissions, cache logic, task side-effects, and edge cases.</p>
   <div class="test-grid">
-    <div class="test-card reveal"><span class="test-num" style="color:var(--accent2)">443+</span><span class="test-label">Total Tests</span></div>
+    <div class="test-card reveal"><span class="test-num" style="color:var(--accent2)">600+</span><span class="test-label">Total Tests</span></div>
     <div class="test-card reveal" style="transition-delay:.07s"><span class="test-num" style="color:var(--accent)">339</span><span class="test-label">Admin Tests</span></div>
     <div class="test-card reveal" style="transition-delay:.14s"><span class="test-num" style="color:var(--blue)">104</span><span class="test-label">Faculty Tests</span></div>
-    <div class="test-card reveal" style="transition-delay:.21s"><span class="test-num" style="color:var(--accent3)">xfail</span><span class="test-label">Bugs Tracked</span></div>
+    <div class="test-card reveal" style="transition-delay:.21s"><span class="test-num" style="color: #9b7fe8">128</span><span class="test-label">Student Tests</span></div>
   </div>
   <div class="coverage-bars reveal">
     <div class="coverage-row">
@@ -800,12 +800,12 @@ fibonacci(<span class="num">10</span>)
     <div class="coverage-row">
       <span class="coverage-module">StudentModule</span>
       <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="95" style="width:0%;background:var(--blue)"></div></div>
-      <span class="coverage-pct">95% <span style="font-size:0.6rem;color:var(--muted)">target</span></span>
+      <span class="coverage-pct">90% <span style="font-size:0.6rem;color:var(--muted)"></span></span>
     </div>
     <div class="coverage-row">
       <span class="coverage-module">Compilers</span>
       <div class="coverage-bar-wrap"><div class="coverage-bar" data-width="95" style="width:0%;background:var(--amber)"></div></div>
-      <span class="coverage-pct">95% <span style="font-size:0.6rem;color:var(--muted)">target</span></span>
+      <span class="coverage-pct">97% <span style="font-size:0.6rem;color:var(--muted)"></span></span>
     </div>
     <div class="coverage-row">
       <span class="coverage-module">Models</span>

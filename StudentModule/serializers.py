@@ -13,8 +13,8 @@ class ReviewHyperlinkedIdentityField(serializers.HyperlinkedIdentityField):
         if obj.review_id is None:
             return None
         kwargs = {
-            'student': obj.enrollment.student.student_id,
-            'enrollment' : obj.enrollment.enrollment_id,
+            'student_id': obj.enrollment.student.student_id,
+            'enrollment_id' : obj.enrollment.enrollment_id,
             'review_id': getattr(obj, self.lookup_field)
         }
         return self.reverse (view_name, kwargs=kwargs, request=request, format=format)
@@ -23,7 +23,7 @@ class ReviewHyperlinkedIdentityField(serializers.HyperlinkedIdentityField):
 
 class ReviewsSerializer(serializers.ModelSerializer):
     urls = ReviewHyperlinkedIdentityField(
-        view_name='review-detail',
+        view_name='Student:review-detail',
         lookup_field='review_id',
     )
     class Meta:
@@ -44,7 +44,10 @@ class ReviewsSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        enrollment = Enrollment.objects.get(enrollment_id=self.context.get('enrollment'))
+        enrollment = Enrollment.objects.filter(enrollment_id=self.context.get('enrollment_id')).first()
+        if not enrollment:
+            raise serializers.ValidationError("Enrollment does not exist")
+
         review = Reviews.objects.create(review_text=validated_data.get('review_text'),
                                         rating=validated_data.get('rating'),
                                         enrollment=enrollment)
@@ -60,8 +63,8 @@ class AssessmentCheckedHyperlinkedIdentityField(serializers.HyperlinkedIdentityF
         if obj.assessment_id is None:
             return None
         kwargs = {
-            'enrollment' : obj.enrollment.enrollment_id,
-            'assessment': obj.assessment.assessment_id,
+            'enrollment_id' : obj.enrollment.enrollment_id,
+            'assessment_id': obj.assessment.assessment_id,
             'id': getattr(obj, self.lookup_field)
         }
         return self.reverse(view_name, kwargs=kwargs, request=request, format=format)
@@ -90,13 +93,13 @@ class StudentAssessmentCheckedSerializer(serializers.ModelSerializer):
 
     def validate_student_upload(self, value):
         instance = getattr(self, 'instance', None)
-        if value is None and (instance is None or instance.file_upload is None):
+        if value is None and (instance is None or instance.student_upload is None):
             return None
 
-        if instance and value == instance.file_upload:
+        if instance and value == instance.student_upload:
             return value
 
-        if value is None and instance and instance.file_upload:
+        if value is None and instance and instance.student_upload:
             return instance.file_upload
 
         allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
@@ -200,7 +203,7 @@ class StudentCourseAllocationSerializer(serializers.ModelSerializer):
         )
     )
     def get_faculty_details(self, obj):
-        if obj.teacher_id:
+        if obj.faculty:
             return {
                 'teacher_id' : obj.faculty.employee_id.person_id,
                 'first_name' : obj.faculty.employee_id.first_name,
@@ -221,7 +224,7 @@ class StudentCourseAllocationSerializer(serializers.ModelSerializer):
         )
     )
     def get_course_details(self, obj):
-        if obj.course_code:
+        if obj.course:
             return {
                 'course_code' : obj.course.course_code,
                 'course_name' : obj.course.course_name,
@@ -229,6 +232,7 @@ class StudentCourseAllocationSerializer(serializers.ModelSerializer):
                 'lab' : obj.course.lab,
                 'pre_requisite' : obj.course.pre_requisite.course_code if obj.course.pre_requisite else None,
             }
+        return None
 
 
 class StudentEnrollmentSerializer(serializers.ModelSerializer):
@@ -321,7 +325,7 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
     @extend_schema_field(AttendanceSerializer(many=True))
     def get_attendance_details(self, obj):
         if obj:
-            attendance = Attendance.objects.filter(enrollment=obj.enrollment, lecture__allocation=obj.allocation)
+            attendance = Attendance.objects.filter(enrollment=obj, lecture__allocation=obj.allocation)
             return AttendanceSerializer(attendance, many=True).data
         return None
 
@@ -329,7 +333,7 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
     def get_percentage(self, obj) -> float:
         print(obj)
         if obj:
-            attendance = Attendance.objects.filter(enrollemnt=obj.enrollment, lecture__allocation=obj.allocation)
+            attendance = Attendance.objects.filter(enrollment=obj, lecture__allocation=obj.allocation)
             total = attendance.count()
             attended = attendance.filter(is_present=True).count()
             return round((attended / total) * 100) if total else 0

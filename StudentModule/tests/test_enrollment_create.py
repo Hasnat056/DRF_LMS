@@ -72,11 +72,6 @@ class TestEnrollmentCreatePost:
         r = student_client.post(CREATE_URL, payload, format='json')
         assert r.status_code == 201
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "StudentEnrollmentCreateSerializerB.create() reads 'enrolled_allocation_ids' "
-        "but view passes 'enrolled_allocations_ids' — context key mismatch causes "
-        "None lookup, so enrollment is never created (bug in views.py:205)"
-    ))
     def test_post_creates_enrollment_in_db(
         self, student_client, student_instance, primed_enrollment_cache, active_allocation, db
     ):

@@ -24,9 +24,9 @@ def review_create_url(student_id, enrollment_id):
 
 
 def review_detail_url(student_id, enrollment_id, review_id):
-    return reverse('review-detail', kwargs={
-        'student': student_id,
-        'enrollment': enrollment_id,
+    return reverse('Student:review-detail', kwargs={
+        'student_id': student_id,
+        'enrollment_id': enrollment_id,
         'review_id': review_id,
     })
 

@@ -20,8 +20,8 @@ STUDENT = '/api/student'
 
 def upload_url(enrollment_id, assessment_id, checked_id):
     return reverse('Student:assessment-upload', kwargs={
-        'enrollment': enrollment_id,
-        'assessment': assessment_id,
+        'enrollment_id': enrollment_id,
+        'assessment_id': assessment_id,
         'id': checked_id,
     })
 

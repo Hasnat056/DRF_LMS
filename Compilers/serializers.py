@@ -28,7 +28,7 @@ class CompilerSerializer(serializers.Serializer):
             files = [f for f in data.getlist("file") if f]  # filter out None/empty
             normalized = {
                 "file": files,
-                "input_list": data.get("input_list"),
+                "input_list": data.get("input_list") or None,
             }
         else:
             file_field = data.get("file")
@@ -41,7 +41,7 @@ class CompilerSerializer(serializers.Serializer):
                 files = []
             normalized = {
                 "file": files,
-                "input_list": data.get("input_list"),
+                "input_list": data.get("input_list") or None,
             }
 
         return super().to_internal_value(normalized)

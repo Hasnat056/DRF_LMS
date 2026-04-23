@@ -33,10 +33,6 @@ class TestAttendanceList:
         r = student_client.get(f'{STUDENT}/attendance/')
         assert r.status_code == 200
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "StudentAttendanceSerializer.get_percentage() has typo `enrollemnt=` "
-        "at serializers.py:332 — causes FieldError when percentage is computed"
-    ))
     def test_attendance_list_percentage_field(
         self, student_client, active_enrollment, active_lecture
     ):
@@ -106,10 +102,7 @@ class TestAttendanceRetrieve:
         details = r.data.get('attendance_details', [])
         assert any(d['is_present'] for d in details)
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "StudentAttendanceSerializer.get_percentage() has typo `enrollemnt=` "
-        "at serializers.py:332 — causes FieldError when percentage is computed"
-    ))
+
     def test_retrieve_percentage_no_error(
         self, student_client, active_enrollment, active_lecture
     ):

@@ -70,3 +70,14 @@ class StudentEnrollmentCreatePermission(permissions.BasePermission):
                 return True
             return False
         return False
+
+class StudentAttendancePermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.user.is_authenticated:
+            if request.user.groups.filter(name='Student').exists():
+                return request.method in ['GET']
+            return False
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        return obj.student.student_id.user == request.user

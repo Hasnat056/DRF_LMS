@@ -1,14 +1,11 @@
-from http.client import responses
-
-from django.core.cache import cache
-from django.db.models.query import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
 from rest_framework.views import APIView
 from AdminModule.serializers import StudentSerializer
+from cloudinary.exceptions import BadRequest as CloudinaryBadRequest
+from rest_framework.exceptions import ValidationError
 
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
@@ -112,6 +109,17 @@ class StudentProfileView(
                 return Response(data=serializer.errors, status=400)
         return Response(data={'message': 'A valid user not provided'},status=404)
 
+    def patch(self, request):
+        if request.user.groups.filter(name='Student').exists():
+            student = Student.objects.get(student_id__user=request.user)
+            serializer = self.serializer_class(student, data=request.data, partial=True, context={'request': request})
+            if serializer.is_valid():
+                serializer.save()
+                return Response(data=serializer.data)
+            else:
+                return Response(data=serializer.errors, status=400)
+        return Response(data={'message': 'A valid user not provided'}, status=404)
+
 
 class StudentEnrollmentsListView(
     StudentEnrollmentPermissionMixin,
@@ -140,6 +148,8 @@ class StudentEnrollmentRetrieveView(
 
 
 
+
+
 class StudentAssessmentUploadView(
     StudentAssessmentUploadPermissionMixin,
     generics.UpdateAPIView
@@ -148,8 +158,15 @@ class StudentAssessmentUploadView(
     serializer_class = StudentAssessmentCheckedSerializer
     lookup_field = 'id'
 
+    def perform_update(self, serializer):
+        try:
+            serializer.save()
+        except CloudinaryBadRequest as e:
+            raise ValidationError({'student_upload': str(e)})
+
 
 class StudentAttendanceListAPIView(
+    StudentAttendancePermissionMixin,
     generics.ListAPIView
 ):
 
@@ -160,6 +177,7 @@ class StudentAttendanceListAPIView(
 
 
 class StudentAttendanceRetrieveAPIView(
+    StudentAttendancePermissionMixin,
     generics.RetrieveAPIView
 ):
     serializer_class = StudentAttendanceSerializer
@@ -275,7 +293,7 @@ class StudentCompilerAPIView(APIView):
 
 
     def post(self, request, *args, **kwargs):
-        if 'file' in request.data and request.data['file'] == '':
+        if 'file' not in request.data or request.data['file'] == '':
             return Response(data={'error': 'Please provide a file'}, status=status.HTTP_400_BAD_REQUEST)
 
         data = request.data.copy()

@@ -6,7 +6,6 @@ from .permissions import *
 class StudentPermissionMixin:
     permission_classes = [IsAuthenticated,StudentPermissions]
 
-
 class ReviewsPermissionMixin:
     permission_classes = [IsAuthenticated, ReviewPermission]
 
@@ -18,3 +17,6 @@ class StudentAssessmentUploadPermissionMixin:
 
 class StudentEnrollmentCreatePermissionMixin:
     permission_classes = [IsAuthenticated, StudentEnrollmentCreatePermission]
+
+class StudentAttendancePermissionMixin:
+    permission_classes = [IsAuthenticated, StudentAttendancePermission]

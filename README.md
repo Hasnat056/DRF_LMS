@@ -1,6 +1,8 @@
 # NexusAPI
 
-A production-ready REST API backend for university academic management. Built with Django REST Framework, NexusAPI powers the complete academic lifecycle — from student enrollment and course allocation to assessment management, result calculation, and transcript generation.
+A production-ready REST API backend for university academic management, deployed on Azure. Built with Django REST Framework, NexusAPI powers the complete academic lifecycle — from student enrollment and course allocation to assessment management, result calculation, and transcript generation.
+
+**Live deployment:** https://nexusapi.eastasia.cloudapp.azure.com/
 
 ---
 
@@ -20,7 +22,6 @@ A production-ready REST API backend for university academic management. Built wi
 - [File Storage](#file-storage)
 - [Testing](#testing)
 - [Load Testing](#load-testing)
-- [Contributing](#contributing)
 
 ---
 
@@ -46,7 +47,11 @@ Results Calculated → Transcripts Generated → Semester Closed
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Client (HTTP)                     │
+│                 Client (HTTPS / 443)                 │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│          Nginx — SSL termination · Reverse proxy      │
 └─────────────────────┬───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────┐
@@ -56,12 +61,16 @@ Results Calculated → Transcripts Generated → Semester Closed
 │ AdminModule  │ FacultyModule│    StudentModule       │
 ├──────────────┴──────────────┴───────────────────────┤
 │                   Models (MySQL)                     │
-├─────────────────────────────────────────────────────┤
-│            Redis Cache + Celery Tasks                │
+├──────────────┬──────────────────────────────────────┤
+│  Redis Cache │  Celery Tasks                        │
+├──────────────┴──────────────────────────────────────┤
+│     Compilers (Python · C/C++ · Java containers)    │
 ├─────────────────────────────────────────────────────┤
 │              Cloudinary (File Storage)               │
 └─────────────────────────────────────────────────────┘
 ```
+
+6 services containerized with Docker Compose on Azure. Django routes code-execution requests to isolated compiler microservices over HTTP. Redis doubles as the application cache and Celery's message broker.
 
 ---
 
@@ -76,7 +85,10 @@ Results Calculated → Transcripts Generated → Semester Closed
 | Authentication | JWT (SimpleJWT) |
 | File Storage | Cloudinary |
 | API Documentation | drf-spectacular (OpenAPI 3.0) |
+| Reverse Proxy | Nginx (SSL termination, rate limiting) |
 | Containerization | Docker + Docker Compose |
+| Deployment | Azure VM — East Asia region |
+| SSL | Let's Encrypt |
 | Testing | pytest + pytest-django + pytest-cov |
 | Load Testing | Locust |
 
@@ -114,6 +126,7 @@ Results Calculated → Transcripts Generated → Semester Closed
 - Celery-powered async tasks for semester activation, closing, and cache refresh
 - GPA calculation supporting both absolute grading and bell-curve (for 20+ students)
 - Automated email notifications for change request confirmations
+- Sandboxed code execution — Python, C/C++, Java each in isolated Docker containers
 - OpenAPI 3.0 documentation via drf-spectacular
 
 ---
@@ -132,7 +145,7 @@ NexusAPI/
 ├── Models/                     # Shared data models
 │   └── models.py               # All Django models
 │
-├── AdminModule/                # Admin API
+├── AdminModule/                # Admin API  (26 routes)
 │   ├── views.py
 │   ├── serializers.py
 │   ├── permissions.py
@@ -140,23 +153,16 @@ NexusAPI/
 │   ├── tasks.py
 │   ├── urls.py
 │   └── tests/
-│       ├── test_views.py
-│       ├── test_serializers.py
-│       ├── test_api.py
-│       ├── test_tasks.py
-│       └── test_cache.py
 │
-├── FacultyModule/              # Faculty API
+├── FacultyModule/              # Faculty API  (11 routes)
 │   ├── views.py
 │   ├── serializers.py
 │   ├── permissions.py
 │   ├── mixins.py
 │   ├── urls.py
 │   └── tests/
-│       ├── test_serializer.py
-│       └── test_views.py
 │
-├── StudentModule/              # Student API
+├── StudentModule/              # Student API  (13 routes)
 │   ├── views.py
 │   ├── serializers.py
 │   ├── permissions.py
@@ -272,7 +278,7 @@ EMAIL_HOST_PASSWORD=your-app-password
 
 ### Base URL
 ```
-http://localhost:8000/api/
+https://nexusapi.eastasia.cloudapp.azure.com/api/
 ```
 
 ### Admin Module — `/api/admin/`
@@ -312,7 +318,7 @@ http://localhost:8000/api/
 | GET/POST | `/allocations/<id>/lectures/` | List and create lectures |
 | GET/PUT/DELETE | `/allocations/<id>/lectures/<id>/` | Lecture detail with attendance |
 | GET | `/requests/` | Own change requests |
-| PATCH | `/requests/<id>/` | Apply confirmed change request |
+| PUT | `/requests/<id>/` | Apply confirmed change request |
 
 ### Student Module — `/api/student/`
 
@@ -433,7 +439,27 @@ Maximum file size: 50MB
 
 ## Testing
 
-NexusAPI has a comprehensive test suite with 217+ tests across 5 test files.
+NexusAPI has a comprehensive test suite with **600+ tests** across all modules, covering views, serializers, permissions, cache logic, task side-effects, and edge cases. The suite uses Django DB transactions, Celery eager execution, and Redis cache isolation.
+
+### Test counts by module
+
+| Module | Tests |
+|--------|-------|
+| AdminModule | 339 |
+| FacultyModule | 104 |
+| StudentModule | 128 |
+| Compilers | 46 |
+| **Total** | **600+** |
+
+### Coverage by module
+
+| Module | Coverage |
+|--------|----------|
+| AdminModule | 84% |
+| FacultyModule | 88% |
+| StudentModule | 90% |
+| Compilers | 97% |
+| Models | 90% |
 
 ### Run all tests:
 ```bash
@@ -443,48 +469,61 @@ docker compose exec backend pytest -v --tb=short
 ### Run with coverage:
 ```bash
 docker compose exec backend pytest \
-  --cov=AdminModule \
-  --cov=FacultyModule \
-  --cov=Models \
-  --cov-report=term-missing \
-  --cov-config=setup.cfg
+  --cov=AdminModule --cov=FacultyModule --cov=StudentModule \
+  --cov=Compilers --cov=Models \
+  --cov-report=term-missing --cov-config=setup.cfg
 ```
 
-### Run specific module:
+### Run a specific module:
 ```bash
 docker compose exec backend pytest AdminModule/tests/ -v
 docker compose exec backend pytest FacultyModule/tests/ -v
+docker compose exec backend pytest StudentModule/tests/ -v
+docker compose exec backend pytest Compilers/tests/ -v
 ```
-
-### Coverage by module:
-
-| Module | Coverage |
-|--------|----------|
-| `AdminModule/tasks.py` | 94% |
-| `Models/models.py` | 93% |
-| `AdminModule/serializers.py` | 74% |
-| `AdminModule/views.py` | 73% |
-| `FacultyModule/views.py` | 74% |
-| **Total** | **83%** |
 
 ---
 
 ## Load Testing
 
-NexusAPI includes three Locust load test scenarios.
+NexusAPI includes three Locust scenarios targeting the live Azure deployment.
 
+### Scenarios
 
+| Scenario | Users | Ramp rate | Duration | Traffic profile |
+|----------|-------|-----------|----------|-----------------|
+| Normal load | 200 | 20/s | 10 min | Read-heavy (80/20) — simulates a regular day |
+| Peak load | 1 000 | 50/s | 5 min | Mixed read/write — enrollment registration rush |
+| Spike | 5 000 | 250/s | 3 min | Worst-case burst — finds the breaking point |
 
-### Performance thresholds:
+### Run scenarios
+
+```bash
+# Normal load
+locust -f locustfile.py NormalLoadUser \
+  --headless -u 200 -r 20 --run-time 10m \
+  --host https://nexusapi.eastasia.cloudapp.azure.com
+
+# Peak load
+locust -f locustfile.py PeakLoadUser \
+  --headless -u 1000 -r 50 --run-time 5m \
+  --host https://nexusapi.eastasia.cloudapp.azure.com
+
+# Spike test
+locust -f locustfile.py SpikeUser \
+  --headless -u 5000 -r 250 --run-time 3m \
+  --host https://nexusapi.eastasia.cloudapp.azure.com
+
+# All scenarios with interactive UI
+locust -f locustfile.py --host https://nexusapi.eastasia.cloudapp.azure.com
+# open http://localhost:8089
+```
+
+### Performance targets
 
 | Metric | Target |
 |--------|--------|
-| Failure rate | < 5% |
-| Average response time | < 1000ms |
-| P95 response time | < 3000ms |
-
----
-
-
-
-
+| Failure rate | < 1% |
+| p95 response time (cached reads) | < 500ms |
+| p99 response time | < 2 000ms |
+| Average response time | < 1 000ms |

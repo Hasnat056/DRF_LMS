@@ -98,7 +98,7 @@ class CompilerSerializer(serializers.Serializer):
 
 
     def _handle_single_file(self,request_folder, file_obj, input_file,extension):
-        file_path = os.path.join(request_folder, file_obj.name)
+        file_path = os.path.join(request_folder, os.path.basename(file_obj.name))
         with open(file_path, 'wb') as f:
             for chunk in file_obj.chunks():
                 f.write(chunk)
@@ -137,7 +137,7 @@ class CompilerSerializer(serializers.Serializer):
     def _handle_zip(self, file_obj, input_file, request_folder):
         file_extension = None
 
-        file_path = os.path.join(request_folder, file_obj.name)
+        file_path = os.path.join(request_folder, os.path.basename(file_obj.name))
         with open(file_path, 'wb') as f:
             for chunk in file_obj.chunks():
                 f.write(chunk)
@@ -157,7 +157,12 @@ class CompilerSerializer(serializers.Serializer):
             if file_extension is None:
                 return Response({'error': 'Please provide a main file with proper extension'})
 
-            zipObj.extractall(path=request_folder)
+            safe_prefix = os.path.realpath(request_folder)
+            for member in zipObj.infolist():
+                target_path = os.path.realpath(os.path.join(safe_prefix, member.filename))
+                if not target_path.startswith(safe_prefix + os.sep):
+                    return Response({'error': 'Invalid ZIP contents'})
+                zipObj.extract(member, path=request_folder)
             extracted_folder = request_folder
             items = os.listdir(request_folder)
             # if there’s only one directory inside tmpdir (besides the .zip file), go into it
@@ -214,7 +219,7 @@ class CompilerSerializer(serializers.Serializer):
 
 
         for each in uploaded_files:
-            file_path = os.path.join(request_folder, each.name)
+            file_path = os.path.join(request_folder, os.path.basename(each.name))
             with open(file_path, 'wb') as f:
                 for chunk in each.chunks():
                     f.write(chunk)

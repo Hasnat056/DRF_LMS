@@ -181,36 +181,40 @@ class AssessmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Total marks cannot be greater than 500.')
         return value
 
-    def validate(self,data):
+    def validate(self, data):
         allocation_id = self.context.get('allocation_id')
         errors = {}
-        if self.instance and self.instance.weightage == data['weightage'] and self.instance.assessment_name == data['assessment_name']:
+        weightage = data.get('weightage')
+        assessment_name = data.get('assessment_name')
+
+        if self.instance and weightage == self.instance.weightage and assessment_name == self.instance.assessment_name:
             return data
 
-        #weightage lower threshold validation
-        if data['weightage'] < 1:
-            errors['weightage'] = 'Weightage cannot be less than 1.'
-
         all_assessments = Assessment.objects.filter(allocation=allocation_id)
-        total_weightage = 0
-        if all_assessments.exists():
+
+        if weightage is not None:
+            if weightage < 1:
+                errors['weightage'] = 'Weightage cannot be less than 1.'
             total_weightage = sum([
                 each.weightage if not self.instance or each.assessment_id != self.instance.assessment_id else 0
                 for each in all_assessments
             ])
+            if total_weightage + weightage > 100:
+                errors['weightage'] = f'Total weightage: {total_weightage + weightage}, Error: Total weightage cannot exceed 100 for allocation_id: {allocation_id}'
 
-        #weightage upper threshold validation
-        if total_weightage + data['weightage'] > 100:
-            errors['weightage'] = f'Total weightage: {total_weightage+data['weightage']}, Error: Total weightage cannot exceed 100 for allocation_id: {allocation_id}'
+        if assessment_name is not None:
+            same_assessment = all_assessments.filter(
+                assessment_type=data.get('assessment_type'),
+                assessment_name=assessment_name
+            )
+            if self.instance:
+                same_assessment = same_assessment.exclude(assessment_id=self.instance.assessment_id)
+            if same_assessment.exists():
+                errors['assessment_name'] = f"Assessment {assessment_name} already exists for the allocation_id: {allocation_id}"
 
-        #assessment name uniqueness validation
-        same_assessment = all_assessments.filter(assessment_type=data['assessment_type']).filter(assessment_name=data['assessment_name'])
-        if same_assessment.exists():
-            errors['assessment_name'] = f"Assessment {data['assessment_name']} already exists for the allocation_id: {allocation_id}"
-
-        #submission deadline validation provided student_submission == True
-        if data['student_submission'] == True and not data['submission_deadline']:
+        if data.get('student_submission') is True and not data.get('submission_deadline'):
             errors['submission_deadline'] = 'Submission deadline cannot be null'
+
         if errors:
             raise serializers.ValidationError(errors)
         return data
@@ -247,7 +251,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
         return assessment
 
     def update(self, instance, validated_data):
-        if not validated_data['student_submission']:
+        if not validated_data.get('student_submission'):
             validated_data.pop('student_submission',{})
             validated_data.pop('submission_deadline',{})
 
@@ -307,7 +311,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
     def validate(self, data):
         allocation = CourseAllocation.objects.filter(allocation_id=data['lecture'].allocation.allocation_id).prefetch_related('enrollment_set')
         if not allocation.exists():
-            raise serializers.ValidationError(f'No course allocations available for lecture: {data['lecture_id']}')
+            raise serializers.ValidationError(f'No course allocations available for lecture: {data["lecture"]}')
 
         enrolled_students = allocation.first().enrollment_set.values_list('enrollment', flat=True)
 
@@ -388,7 +392,10 @@ class LectureSerializer(serializers.ModelSerializer):
         enrollments = get_list_or_404(Enrollment, allocation=validated_data['allocation'])
 
         if attendance_set:
+            valid_enrollment_ids = {e.id for e in enrollments}
             for each in attendance_set:
+                if each['enrollment'].id not in valid_enrollment_ids:
+                    raise serializers.ValidationError("Enrollment does not belong to this allocation.")
                 Attendance.objects.create(attendance_date=lecture.starting_time.date(), lecture=lecture, **each)
 
         else:
@@ -462,7 +469,7 @@ class FacultyRequestsSerializer(
 
 
     def update(self, instance, validated_data):
-        if validated_data.get('status') in ['confirmed','pending','expired']:
+        if validated_data.get('status') in ['confirmed', 'pending']:
             return instance
 
         if validated_data.get('status') == 'expired':
@@ -481,11 +488,15 @@ class FacultyRequestsSerializer(
                 instance.save()
                 raise serializers.ValidationError('This allocation has no enrollments')
 
-            for each in allocation.enrollment_set.all():
-                if not each.result:
-                    Result.objects.create(enrollment_id=each)
-                if each.result and each.result.course_gpa and each.result.obtained_marks:
-                    calculated_result +=1
+            enrollments = allocation.enrollment_set.all()
+            Result.objects.bulk_create(
+                [Result(enrollment=e) for e in enrollments.filter(result__isnull=True)],
+                ignore_conflicts=True
+            )
+            calculated_result = enrollments.filter(
+                result__course_gpa__isnull=False,
+                result__obtained_marks__isnull=False
+            ).count()
 
             if calculated_result > 1:
                 instance.status = 'declined'

@@ -86,7 +86,16 @@ class FacultyDashboardView(
         completed_allocations = faculty.courseallocation_set.filter(status='Completed').count()
         allocation_average_success = {}
         for each in faculty.courseallocation_set.filter(status='Completed'):
-            average = sum([e.result.obtained_marks for e in each.enrollment_set.all() if e.result.obtained_marks])/ each.enrollment_set.all().count() if each.enrollment_set.count() else 1
+            enrollments = each.enrollment_set.all()
+            count = enrollments.count()
+            if count == 0:
+                average = 0
+            else:
+                marks = [
+                    e.result.obtained_marks for e in enrollments
+                    if hasattr(e, 'result') and e.result.obtained_marks
+                ]
+                average = sum(marks) / count if marks else 0
             allocation_average_success[each.allocation_id] = average
 
         data = {
@@ -176,7 +185,7 @@ class FacultyCourseAllocationView(
             for each in query_params:
                 if each in self.filterset_fields:
                     value = self.request.query_params.get(each)
-                    filtered_data = [datarow for datarow in data if datarow.get(each) == value]
+                    filtered_data = [datarow for datarow in data if str(datarow.get(each)) == value]
                     data = filtered_data
 
             return Response(data=data, status=status.HTTP_200_OK)
@@ -246,18 +255,18 @@ class AssessmentListCreateAPIView(
             if not query_params:
                 page = self.paginate_queryset(data)
                 if page is not None:
-                    return self.get_paginated_response(data)
+                    return self.get_paginated_response(page)
 
                 return Response(data=data, status=status.HTTP_200_OK)
             for each in query_params:
                 if each in self.filterset_fields:
                     value = self.request.query_params.get(each)
-                    filtered_data = [datarow for datarow in data if datarow.get(each)==value]
+                    filtered_data = [datarow for datarow in data if str(datarow.get(each)) == value]
                     data = filtered_data
 
             page = self.paginate_queryset(data)
             if page is not None:
-                return self.get_paginated_response(data)
+                return self.get_paginated_response(page)
 
             return Response(data=data, status=status.HTTP_200_OK)
 

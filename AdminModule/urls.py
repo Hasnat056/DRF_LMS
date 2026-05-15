@@ -14,7 +14,7 @@ urlpatterns =[
     path('students/', StudentListCreateAPIView.as_view()),
     path('students/<str:student_id>/', StudentRetrieveUpdateAPIView.as_view(), name='student-detail'),
 
-    path('change-request/confrim/<uuid:token>/', ChangeRequestView.as_view(), name='confirm-change-request'),
+    path('change-request/confirm/<uuid:token>/', ChangeRequestView.as_view(), name='confirm-change-request'),
 
     path('departments/', DepartmentListAPIView.as_view()),
     path('departments/<str:department_id>/', DepartmentRetrieveUpdateAPIView.as_view(), name='department-detail'),

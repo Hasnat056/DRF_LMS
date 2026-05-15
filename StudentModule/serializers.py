@@ -100,7 +100,7 @@ class StudentAssessmentCheckedSerializer(serializers.ModelSerializer):
             return value
 
         if value is None and instance and instance.student_upload:
-            return instance.file_upload
+            return instance.student_upload
 
         allowed_extensions = ['jpeg', 'jpg', 'png', 'docx', 'pptx', 'zip', 'pdf', 'xlsx', 'csv']
         allowed_mime_types = [

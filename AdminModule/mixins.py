@@ -30,7 +30,6 @@ class PersonSerializerMixin:
         person= None
         if user_data:
             user = User.objects.create_user(**user_data, username=person_data['institutional_email'])
-            user.set_password(user.password)
             user.save()
 
         if person_data and model_data:
@@ -44,7 +43,7 @@ class PersonSerializerMixin:
                 user.groups.add(group)
                 instance = faculty
             elif model == 'Student':
-                count = Student.objects.filter(program=model_data['program'], admission_date=timezone.now().year).count()
+                count = Student.objects.filter(program=model_data['program'], admission_date__year=timezone.now().year).count()
                 person_id = f'NUM-{model_data['program']}-{str(timezone.now().year)}-{str(count+1)}'
                 person_data['person_id'] = person_id
                 person = Person.objects.create(**person_data, type='Student', user=user)
@@ -164,10 +163,12 @@ class PersonSerializerMixin:
 class ResultCalculationMixin:
     def calculate_gpa(self, data):
         results = Result.objects.filter(enrollment__in=data.keys())
-        values = list(data.values())
+        values = [v for v in data.values() if v is not None]
         final_result_data = {}
         if len(values) < 20:
             for enrollment, obtained in data.items():
+                if obtained is None:
+                    continue
                 if obtained >= 85:
                     course_gpa = 4.0
                 elif obtained >= 80:
@@ -202,8 +203,10 @@ class ResultCalculationMixin:
         final_result_data = {'mean': mean, 'standard_deviation': standard_deviation}
 
         for enrollment, obtained in data.items():
+            if obtained is None:
+                continue
             course_gpa = 0.00
-            score = (obtained - mean) / standard_deviation
+            score = (obtained - mean) / standard_deviation if standard_deviation != 0 else 0.0
             if score >= 1.5:
                 course_gpa = 4.0
             elif score >= 1.0:

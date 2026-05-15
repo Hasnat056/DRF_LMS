@@ -145,7 +145,8 @@ class PersonSerializer(serializers.ModelSerializer):
         if self.instance and self.instance.dob == value:
             return value
         if value is not None:
-            age = datetime.today().year - value.year
+            today = datetime.today().date()
+            age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
             if value > datetime.today().date():
                 raise serializers.ValidationError("Date of Birth cannot be in the future")
             if age < 14:
@@ -394,7 +395,16 @@ class DepartmentSerializer(serializers.ModelSerializer):
 
 
     def update(self, instance, validated_data):
-        faculty = Faculty.objects.get(employee_id=validated_data['HOD'])
+        hod_data = validated_data.pop('HOD', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if hod_data is None:
+            return instance
+
+        faculty = Faculty.objects.get(employee_id=hod_data)
         if instance.HOD and instance.HOD == faculty:
             return instance
 
@@ -503,8 +513,7 @@ class SemesterClassSerializer(serializers.ModelSerializer):
         self.fields['semesterdetails_set'].context.update(self.context)
 
         if hasattr(self.instance, 'semesterdetails_set'):
-            for each in self.instance.semesterdetails_set.all():
-                self.fields['semesterdetails_set'].instance = each
+            self.fields['semesterdetails_set'].instance = self.instance.semesterdetails_set.all()
 
 
 
@@ -812,7 +821,7 @@ class TranscriptSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        transcript = Transcript.objects.get(semester=data['semester'], student=data['student'])
+        transcript = Transcript.objects.filter(semester=data['semester'], student=data['student']).first()
         if transcript:
             raise serializers.ValidationError('Transcript already exists')
         return data
@@ -830,13 +839,13 @@ class TranscriptSerializer(serializers.ModelSerializer):
         semester_gpa = 0.00
         total_credits_attempted = 0.0
         enrollments = Enrollment.objects.filter(student=student, allocation__semester=semester).prefetch_related('result')
-        if enrollments.exists() and [each.status=='Completed' for each in enrollments]:
+        if enrollments.exists() and all(each.status == 'Completed' for each in enrollments):
             for each in enrollments:
                 semester_gpa += each.result.course_gpa * each.allocation.course.credit_hours
                 total_credits_attempted += each.allocation.course.credit_hours
 
             semester_gpa = semester_gpa/total_credits_attempted
-            transcript = Transcript.objects.create(semester=semester, student=student, semester_gpa=semester_gpa, total_credits_attempted=total_credits_attempted)
+            transcript = Transcript.objects.create(semester=semester, student=student, semester_gpa=semester_gpa, total_credits=total_credits_attempted)
             return transcript
         return None
 
@@ -984,13 +993,13 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
                 if instance.new_hod:
                     old_hod = instance.department.HOD if instance.department.HOD else None
                     department = get_object_or_404(Department, department_id=instance.department.department_id)
-                    department.hod = instance.new_hod
+                    department.HOD = instance.new_hod
                     department.save()
                     instance.status = 'applied'
                     instance.applied_at = timezone.now()
                     instance.save()
                     from .tasks import send_hod_change_mail
-                    send_hod_change_mail.apply_aysnc(args=[instance.pk, old_hod], eta=timezone.now()+timedelta(minutes=2))
+                    send_hod_change_mail.apply_async(args=[instance.pk, old_hod], eta=timezone.now()+timedelta(minutes=2))
         return instance
 
 
@@ -1004,7 +1013,7 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
 
     def validate(self, data):
         file = data['file']
-        if not file.name.endswith('.csv') or file.name.endswith('.xlsx'):
+        if not (file.name.endswith('.csv') or file.name.endswith('.xlsx')):
             raise serializers.ValidationError('Invalid file type')
 
         if not file.content_type == 'text/csv' or file.content_type == 'application/vnd.ms-excel':
@@ -1258,14 +1267,15 @@ class SemesterSerializer(serializers.ModelSerializer):
             instance.closing_deadline = validated_data['closing_deadline']
             instance.save()
 
-            old_task_id = cache.get(f"semester:closing:{instance.semester_id}")
+            closing_cache_key = f'semester:closing:{instance.semester_id}'
+            old_task_id = cache.get(closing_cache_key)
             if old_task_id:
                 app.control.revoke(old_task_id, terminate=True)
-                cache.delete(cache_key)
+                cache.delete(closing_cache_key)
 
             from .tasks import semester_closing_task
             task = semester_closing_task.apply_async(args=[instance.semester_id], eta=instance.closing_deadline)
-            cache.set(cache_key, task.id, timeout=None)
+            cache.set(closing_cache_key, task.id, timeout=None)
 
             return instance
 

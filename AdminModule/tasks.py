@@ -40,6 +40,7 @@ class CustomRequest:
 
 
 @shared_task
+@transaction.atomic
 def semester_activation_task(semester_id):
     semester = Semester.objects.filter(semester_id=semester_id).prefetch_related('courseallocation_set').prefetch_related('courseallocation_set__enrollment_set').first()
     if semester:
@@ -58,6 +59,7 @@ def semester_activation_task(semester_id):
     return f'Semester {semester_id} has been activated successfully!'
 
 @shared_task
+@transaction.atomic
 def semester_closing_task(semester_id):
     semester = Semester.objects.filter(semester_id=semester_id).prefetch_related(
         'courseallocation_set').prefetch_related('courseallocation_set__enrollment_set').first()
@@ -82,7 +84,9 @@ def cache_faculty_data_task(user_id):
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
 
-    queryset = Faculty.objects.all()
+    queryset = Faculty.objects.select_related(
+        'employee_id', 'employee_id__user', 'employee_id__address', 'department'
+    ).prefetch_related('employee_id__qualification_set')
     cache_key = 'admin:faculty_list'
     cache.delete(cache_key)
     serializer = FacultySerializer(queryset,context=context, many=True)
@@ -122,7 +126,9 @@ def cache_student_data_task(user_id):
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
 
-    queryset = Student.objects.all()
+    queryset = Student.objects.select_related(
+        'student_id', 'student_id__user', 'student_id__address', 'program'
+    ).prefetch_related('student_id__qualification_set')
     cache_key = 'admin:student_list'
     cache.delete(cache_key)
     serializer = StudentSerializer(queryset,context=context, many=True)

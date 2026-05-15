@@ -61,8 +61,6 @@ services:
     build: .
     container_name: celery-worker
     command: celery -A NexusAPI worker --loglevel=info
-    volumes:
-      - code_files:/code
     depends_on:
       - redis-server
       - backend

@@ -19,10 +19,16 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+
+
+class LoginView(TokenObtainPairView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -40,7 +46,7 @@ urlpatterns = [
         path('admin/', admin.site.urls),
 
         # JWT Authentication
-        path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+        path('api/token/', LoginView.as_view(), name='token_obtain_pair'),
         path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
         # Accounts Login
         path('accounts/', include('django.contrib.auth.urls')),

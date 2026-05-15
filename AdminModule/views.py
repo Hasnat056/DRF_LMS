@@ -402,7 +402,7 @@ class StudentListCreateAPIView(
 
             if len(filter_params)==2:
                 if 'program__department' in filter_params and 'status' in filter_params:
-                    cache_key = f'admin:students{query_params.get("program__department")}:{query_params.get("status")}'
+                    cache_key = f'admin:students:{query_params.get("program__department")}:{query_params.get("status")}'
                     data = cache.get(cache_key)
                     if data is None:
                         return super().list(request, *args, **kwargs)
@@ -448,7 +448,7 @@ class StudentListCreateAPIView(
                 return Response(data, status=status.HTTP_200_OK)
 
             if 'status' in filter_params and len(filter_params)==1:
-                cache_key = f'admin:student_list:status:{query_params.get("status")}'
+                cache_key = f'admin:students:status:{query_params.get("status")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -939,7 +939,7 @@ class ChangeRequestView(APIView):
                 return Response({"error": "This request has already been processed."}, status=400)
 
         change_request.status = 'confirmed'
-        change_request.confirmed_at = datetime.now()
+        change_request.confirmed_at = timezone.now()
         change_request.save()
         if change_request.change_type == 'result_calculation':
             send_result_calculation_confirmation_mail.apply_async(args=[change_request.pk],eta=timezone.now()+timedelta(minutes=2))

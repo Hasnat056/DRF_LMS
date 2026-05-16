@@ -27,9 +27,8 @@ Run scenarios individually:
 Install:
     pip install locust
 """
-
 import random
-import json
+import requests
 from locust import HttpUser, task, between, events
 from locust.exception import StopUser
 
@@ -39,40 +38,46 @@ from locust.exception import StopUser
 # ---------------------------------------------------------------------------
 
 ADMIN_CREDENTIALS = {
-    'username': 'rhays056@gmail.com',
+    'username': 'admin@org.com',
     'password': 'admin12345678',
 }
 
 BASE = '/api/admin'
 
+# Shared token — fetched once at test start, reused by all virtual users
+# so the rate-limited /api/token/ endpoint is only hit once per test run.
+_shared_token = None
+
+
+@events.test_start.add_listener
+def fetch_shared_token(environment, **kwargs):
+    """Authenticate once before any users spawn."""
+    global _shared_token
+    host = environment.host.rstrip('/')
+    response = requests.post(
+        f'{host}/api/token/',
+        json=ADMIN_CREDENTIALS,
+        timeout=10,
+    )
+    if response.status_code == 200:
+        _shared_token = response.json().get('access')
+        print(f'\n[auth] Token acquired successfully.')
+    else:
+        print(f'\n[auth] Login failed: {response.status_code} — {response.text}')
+
 
 # ---------------------------------------------------------------------------
-# Base class — handles authentication
+# Base class — applies shared token to every user
 # ---------------------------------------------------------------------------
 
 class AuthenticatedUser(HttpUser):
     abstract = True
-    token = None
+    credentials = {}  # kept for reference; auth is handled via shared token
 
     def on_start(self):
-        """Authenticate and store JWT token before running tasks."""
-        self.token = self._login(self.credentials)
-        if not self.token:
+        if not _shared_token:
             raise StopUser()
-        self.client.headers.update({'Authorization': f'Bearer {self.token}'})
-
-    def _login(self, credentials):
-        with self.client.post(
-            '/api/token/',
-            json=credentials,
-            catch_response=True,
-            name='POST /api/token/ [auth]'
-        ) as response:
-            if response.status_code == 200:
-                return response.json().get('access')
-            else:
-                response.failure(f'Login failed: {response.status_code}')
-                return None
+        self.client.headers.update({'Authorization': f'Bearer {_shared_token}'})
 
 
 # ---------------------------------------------------------------------------
@@ -161,3 +166,115 @@ class NormalLoadUser(AuthenticatedUser):
             f'{BASE}/enrollments/?status=Active',
             name='GET /enrollments/?status=Active'
         )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 2: Peak Load
+# Simulates semester registration peak — heavy mixed read/write traffic
+# Target: 1000 concurrent users, 5 minutes
+# ---------------------------------------------------------------------------
+
+class PeakLoadUser(AuthenticatedUser):
+    """
+    Aggressive mixed traffic simulating registration day.
+    50% reads, 50% writes — hammers enrollments and allocations.
+    """
+    wait_time = between(0.5, 2)
+    credentials = ADMIN_CREDENTIALS
+
+    @task(4)
+    def list_enrollments(self):
+        self.client.get(f'{BASE}/enrollments/', name='GET /enrollments/')
+
+    @task(4)
+    def list_allocations(self):
+        self.client.get(f'{BASE}/allocations/', name='GET /allocations/')
+
+    @task(4)
+    def list_students(self):
+        self.client.get(f'{BASE}/students/', name='GET /students/')
+
+    @task(3)
+    def list_semesters(self):
+        self.client.get(f'{BASE}/semesters/', name='GET /semesters/')
+
+    @task(3)
+    def list_courses(self):
+        self.client.get(f'{BASE}/courses/', name='GET /courses/')
+
+    @task(2)
+    def filter_active_enrollments(self):
+        self.client.get(
+            f'{BASE}/enrollments/?status=Active',
+            name='GET /enrollments/?status=Active'
+        )
+
+    @task(2)
+    def filter_ongoing_allocations(self):
+        self.client.get(
+            f'{BASE}/allocations/?status=Ongoing',
+            name='GET /allocations/?status=Ongoing'
+        )
+
+    @task(2)
+    def search_students(self):
+        query = random.choice(['BSCS', 'BSSE', 'Active', '2023', '2024'])
+        self.client.get(
+            f'{BASE}/students/?search={query}',
+            name='GET /students/?search='
+        )
+
+    @task(1)
+    def view_dashboard(self):
+        self.client.get(f'{BASE}/dashboard/', name='GET /dashboard/')
+
+    @task(1)
+    def list_departments(self):
+        self.client.get(f'{BASE}/departments/', name='GET /departments/')
+
+    @task(1)
+    def list_programs(self):
+        self.client.get(f'{BASE}/programs/', name='GET /programs/')
+
+
+# ---------------------------------------------------------------------------
+# Scenario 3: Spike Test
+# Simulates a sudden traffic burst — worst-case scenario
+# Target: ramp to 5000 users in 60 seconds, hold for 3 minutes
+# ---------------------------------------------------------------------------
+
+class SpikeUser(AuthenticatedUser):
+    """
+    Rapid burst of read-only traffic on the most-hit endpoints.
+    Almost no think time — simulates a sudden flood of concurrent requests.
+    """
+    wait_time = between(0.1, 0.5)
+    credentials = ADMIN_CREDENTIALS
+
+    @task(5)
+    def view_dashboard(self):
+        self.client.get(f'{BASE}/dashboard/', name='GET /dashboard/')
+
+    @task(4)
+    def list_students(self):
+        self.client.get(f'{BASE}/students/', name='GET /students/')
+
+    @task(4)
+    def list_faculty(self):
+        self.client.get(f'{BASE}/faculty/', name='GET /faculty/')
+
+    @task(3)
+    def list_enrollments(self):
+        self.client.get(f'{BASE}/enrollments/', name='GET /enrollments/')
+
+    @task(3)
+    def list_allocations(self):
+        self.client.get(f'{BASE}/allocations/', name='GET /allocations/')
+
+    @task(2)
+    def list_semesters(self):
+        self.client.get(f'{BASE}/semesters/', name='GET /semesters/')
+
+    @task(1)
+    def list_courses(self):
+        self.client.get(f'{BASE}/courses/', name='GET /courses/')

@@ -51,3 +51,5 @@ docker compose exec backend pytest -v --tb=short
 
 The `Run Tests` workflow mirrors this (MySQL + Redis service containers,
 same `pytest` invocation) so a PR that passes locally should pass in CI too.
+
+<!-- CI bootstrap: verifying the Run Tests workflow reports correctly before enabling required status checks -->

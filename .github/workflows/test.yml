@@ -16,8 +16,6 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: LMS
-          MYSQL_USER: adminUser
-          MYSQL_PASSWORD: testpassword
         ports:
           - 3306:3306
         options: >-
@@ -40,8 +38,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key-not-for-production
       DEBUG: "True"
       DB_NAME: LMS
-      DB_USER: adminUser
-      DB_PASSWORD: testpassword
+      DB_USER: root
+      DB_PASSWORD: root
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       REDIS_URL: redis://127.0.0.1:6379/0
@@ -75,7 +73,7 @@ jobs:
 
       - name: Wait for MySQL to be ready
         run: |
-          until mysqladmin ping -h127.0.0.1 -P3306 -uadminUser -ptestpassword --silent; do
+          until mysqladmin ping -h127.0.0.1 -P3306 -uroot -proot --silent; do
             echo "Waiting for MySQL..."
             sleep 2
           done

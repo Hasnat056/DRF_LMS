@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from django.contrib.auth.models import User, Group
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -26,6 +27,28 @@ def auth_client(user):
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {get_token(user)}')
     return client
+
+
+# ---------------------------------------------------------------------------
+# Cloudinary — every FileField/ImageField in this project (Person.image,
+# AssessmentChecked.student_upload, AllocationFile.file, etc.) uses
+# MediaCloudinaryStorage by default, which uploads to the real Cloudinary
+# API on save(). Tests shouldn't depend on a real third-party service being
+# reachable (or on whichever account's credentials happen to be configured
+# locally) — mock the actual network call so the whole suite runs offline.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def mock_cloudinary_upload():
+    with patch('cloudinary.uploader.upload') as mocked:
+        mocked.return_value = {
+            'public_id': 'test/mock-upload',
+            'secure_url': 'https://res.cloudinary.com/test/mock-upload',
+            'url': 'https://res.cloudinary.com/test/mock-upload',
+            'resource_type': 'raw',
+            'format': '',
+        }
+        yield mocked
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       mysql:
@@ -16,8 +17,6 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: LMS
-          MYSQL_USER: adminUser
-          MYSQL_PASSWORD: testpassword
         ports:
           - 3306:3306
         options: >-
@@ -40,8 +39,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key-not-for-production
       DEBUG: "True"
       DB_NAME: LMS
-      DB_USER: adminUser
-      DB_PASSWORD: testpassword
+      DB_USER: root
+      DB_PASSWORD: root
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       REDIS_URL: redis://127.0.0.1:6379/0
@@ -66,6 +65,8 @@ jobs:
           cache: 'pip'
 
       - name: Install system dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config default-libmysqlclient-dev build-essential
@@ -73,9 +74,14 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Create /code (compiler upload dir, normally the code_files volume)
+        run: |
+          sudo mkdir -p /code
+          sudo chown "$(whoami)" /code
+
       - name: Wait for MySQL to be ready
         run: |
-          until mysqladmin ping -h127.0.0.1 -P3306 -uadminUser -ptestpassword --silent; do
+          until mysqladmin ping -h127.0.0.1 -P3306 -uroot -proot --silent; do
             echo "Waiting for MySQL..."
             sleep 2
           done

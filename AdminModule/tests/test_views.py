@@ -718,7 +718,7 @@ class TestSemesterEndpoints:
     def test_list_with_filter_class_uses_cache_key(self, admin_client, admin_instance, inactive_semester, batch_class):
         from AdminModule.tasks import cache_semester_data_task
         cache_semester_data_task.delay(admin_instance.employee_id.user.id)
-        r = admin_client.get(f'{ADMIN}/semesters/?semesterdetails__student_class={batch_class.class_id}')
+        r = admin_client.get(f'{ADMIN}/semesters/?associated_class={batch_class.class_id}')
         assert r.status_code == 200
 
     def test_get_semester_detail(self, admin_client, inactive_semester):
@@ -787,7 +787,7 @@ class TestClassEndpoints:
             }, format='json')
         assert r.status_code == 201
         new_class = Class.objects.get(program=program, batch_year=2026)
-        assert Semester.objects.filter(semesterdetails__student_class=new_class).distinct().count() == program.total_semesters
+        assert Semester.objects.filter(associated_class=new_class).count() == program.total_semesters
 
     def test_create_triggers_cache_task(self, admin_client, program):
         with patch('AdminModule.views.cache_semester_data_task.delay') as mock_delay:

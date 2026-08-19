@@ -9,7 +9,7 @@ from Models.models import (
     Faculty, Student, Admin, Semester, SemesterDetails,
     CourseAllocation, Enrollment, Result,
     Assessment, AssessmentChecked, Lecture, Attendance,
-    ChangeRequest,
+    ChangeRequest, AcademicSession,
 )
 
 
@@ -200,32 +200,37 @@ def student_instance(db, student_person, student_group, program, batch_class):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def inactive_semester(db, batch_class, course):
+def academic_session(db):
+    return AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+
+
+@pytest.fixture
+def inactive_semester(db, batch_class, course, academic_session):
     semester = Semester.objects.create(
         semester_no=1,
         status='Inactive',
-        session='Fall-2024',
+        session=academic_session,
         activation_deadline=timezone.now() + timedelta(days=2),
+        associated_class=batch_class,
     )
     SemesterDetails.objects.create(
         semester=semester,
-        student_class=batch_class,
         course=course,
     )
     return semester
 
 
 @pytest.fixture
-def active_semester(db, batch_class, course):
+def active_semester(db, batch_class, course, academic_session):
     semester = Semester.objects.create(
         semester_no=1,
         status='Active',
-        session='Fall-2024',
+        session=academic_session,
         activation_deadline=timezone.now() - timedelta(days=1),
+        associated_class=batch_class,
     )
     SemesterDetails.objects.create(
         semester=semester,
-        student_class=batch_class,
         course=course,
     )
     return semester

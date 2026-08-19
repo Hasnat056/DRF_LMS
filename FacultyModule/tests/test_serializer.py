@@ -462,22 +462,22 @@ class TestFacultyRequestsSerializer:
         )
         assert serializer.fields['status'].read_only is False
 
-    def test_non_confirmed_or_pending_statuses_rejected(
+    def test_confirmed_or_pending_status_writes_are_noop(
         self, faculty_user, course_allocation
     ):
-        """Sending status='pending' or 'confirmed' or 'expired' must be rejected."""
+        """Sending status='pending' or 'confirmed' must not change the request's status."""
         request = self._make_change_request(faculty_user, course_allocation, status='confirmed')
-        for rejected_status in ['pending', 'confirmed', 'expired']:
+        for noop_status in ['pending', 'confirmed']:
             serializer = FacultyRequestsSerializer(
                 instance=request,
-                data={'status': rejected_status},
+                data={'status': noop_status},
                 partial=True,
                 context=_faculty_ctx(faculty_user)
             )
             if serializer.is_valid():
                 result = serializer.save()
                 # update() returns instance unchanged for these statuses
-                assert result.status != rejected_status or result.status == 'confirmed'
+                assert result.status == 'confirmed'
 
     def test_bug_allocation_status_typo_complted(
         self, faculty_user, course_allocation, enrollment, db
@@ -534,15 +534,8 @@ class TestFacultyRequestsSerializer:
             )
         assert course_allocation.status == 'Completed'
 
-    def test_bug_unreachable_expired_branch(self, faculty_user, course_allocation):
-        """
-        BUG: In FacultyRequestsSerializer.update():
-            if validated_data.get('status') in ['confirmed','pending','expired']:
-                return instance       ← returns here for 'expired'
-            if validated_data.get('status') == 'expired':  ← NEVER REACHED
-                ...
-        The second expired check is unreachable code.
-        """
+    def test_expired_status_is_applied(self, faculty_user, course_allocation):
+        """Sending status='expired' should transition the request to 'expired' and stamp applied_at."""
         request = self._make_change_request(faculty_user, course_allocation, status='confirmed')
         serializer = FacultyRequestsSerializer(
             instance=request,
@@ -550,11 +543,8 @@ class TestFacultyRequestsSerializer:
             partial=True,
             context=_faculty_ctx(faculty_user)
         )
-        if serializer.is_valid():
-            result = serializer.save()
-            # expired is caught by first check and returns early — status never set
-            result.refresh_from_db()
-            assert result.status != 'expired', (
-                "BUG: Second 'expired' branch is unreachable — "
-                "first check returns early before it can execute"
-            )
+        assert serializer.is_valid(), serializer.errors
+        result = serializer.save()
+        result.refresh_from_db()
+        assert result.status == 'expired'
+        assert result.applied_at is not None

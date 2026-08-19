@@ -145,10 +145,14 @@ def review(db, active_enrollment):
 @pytest.fixture
 def primed_enrollment_cache(db, active_allocation, student_instance):
     """
-    StudentEnrollmentCreatePermission checks:
-      cache.get(f'enrollments:{student_class_id}:semester:allocations')
-    Prime this key so the permission passes.
+    StudentEnrollmentCreatePermission now does a live DB check requiring
+    active_allocation.semester.session.status == 'Available'. Also primes
+    the display cache that .get()/.post() still read from.
     """
+    session = active_allocation.semester.session
+    session.status = 'Available'
+    session.save()
+
     cache_key = f'enrollments:{student_instance.student_class.class_id}:semester:allocations'
     data = [{'allocation_id': active_allocation.allocation_id, 'confirm': False}]
     cache.set(cache_key, data, timeout=None)

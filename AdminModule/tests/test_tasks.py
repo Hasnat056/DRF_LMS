@@ -132,7 +132,6 @@ class TestSemesterActivationTask:
         )
         SemesterDetails.objects.create(
             semester=inactive_semester,
-            student_class=inactive_semester.semesterdetails_set.first().student_class,
             course=course2,
         )
         alloc2 = CourseAllocation.objects.create(
@@ -488,7 +487,8 @@ class TestCacheSemesterEnrollmentDataTask:
 
     def test_writes_semester_enrollment_cache(self, inactive_semester, course_allocation):
         from AdminModule.tasks import cache_semester_enrollment_data_task
-        key = f'admin:enrollments:semester:{inactive_semester.semester_id}'
+        class_id = inactive_semester.associated_class_id
+        key = f'enrollments:{class_id}:semester:allocations'
         cache.delete(key)
         cache_semester_enrollment_data_task.delay(inactive_semester.semester_id)
         assert cache.get(key) is not None

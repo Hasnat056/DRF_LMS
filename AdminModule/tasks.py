@@ -1,3 +1,4 @@
+import logging
 from itertools import groupby
 from celery import shared_task
 from django.core.mail import send_mail
@@ -12,6 +13,10 @@ from .serializers import FacultySerializer, StudentSerializer, ProgramSerializer
 from django.conf import settings
 from django.http import QueryDict
 from django.utils.encoding import iri_to_uri
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
 
 class CustomRequest:
 
@@ -43,19 +48,28 @@ class CustomRequest:
 @transaction.atomic
 def semester_activation_task(semester_id):
     semester = Semester.objects.filter(semester_id=semester_id).prefetch_related('courseallocation_set').prefetch_related('courseallocation_set__enrollment_set').first()
-    if semester:
-        if semester.status == 'Active':
-            return "Semester already activated"
+    if not semester:
+        logger.warning('semester_activation_task fired for missing semester_id=%s', semester_id)
+        return f'Semester {semester_id} has been activated successfully!'
 
-        semester.status = 'Active'
-        semester.save()
-        for each in semester.courseallocation_set.all():
-            each.status = 'Ongoing'
-            for enroll in each.enrollment_set.all():
-                enroll.status = 'Active'
-                enroll.save()
-            each.save()
+    if semester.status == 'Active':
+        logger.debug('semester_activation_task: semester_id=%s already Active, no-op', semester_id)
+        return "Semester already activated"
 
+    semester.status = 'Active'
+    semester.save()
+    allocation_count = 0
+    for each in semester.courseallocation_set.all():
+        each.status = 'Ongoing'
+        for enroll in each.enrollment_set.all():
+            enroll.status = 'Active'
+            enroll.save()
+        each.save()
+        allocation_count += 1
+
+    logger.info(
+        'Semester %s activated, cascaded to %s course allocation(s)', semester_id, allocation_count
+    )
     return f'Semester {semester_id} has been activated successfully!'
 
 @shared_task
@@ -63,18 +77,139 @@ def semester_activation_task(semester_id):
 def semester_closing_task(semester_id):
     semester = Semester.objects.filter(semester_id=semester_id).prefetch_related(
         'courseallocation_set').prefetch_related('courseallocation_set__enrollment_set').first()
-    if semester:
-        semester.status = 'Completed'
-        semester.save()
-        for each in semester.courseallocation_set.all():
-            each.status = 'Completed'
-            for enroll in each.enrollment_set.all():
-                enroll.status = 'Completed'
-                enroll.save()
-            each.save()
+    if not semester:
+        logger.warning('semester_closing_task fired for missing semester_id=%s', semester_id)
+        return f'Semester {semester_id} has been closed successfully!'
 
+    semester.status = 'Completed'
+    semester.save()
+    allocation_count = 0
+    for each in semester.courseallocation_set.all():
+        each.status = 'Completed'
+        for enroll in each.enrollment_set.all():
+            enroll.status = 'Completed'
+            enroll.save()
+        each.save()
+        allocation_count += 1
+
+    logger.info(
+        'Semester %s closed, cascaded to %s course allocation(s)', semester_id, allocation_count
+    )
     return f'Semester {semester_id} has been closed successfully!'
 
+
+@shared_task
+def session_activation_task(session_id):
+    session = AcademicSession.objects.filter(id=session_id).first()
+    if not session:
+        logger.warning('session_activation_task fired for missing session_id=%s', session_id)
+        return f'Session {session_id} has been activated successfully!'
+
+    if session.status == 'Active':
+        logger.debug('session_activation_task: session_id=%s already Active, no-op', session_id)
+        return "Session already activated"
+
+    session.status = 'Active'
+    session.save()
+    semester_ids = list(Semester.objects.filter(session_id=session_id).values_list('semester_id', flat=True))
+    for semester_id in semester_ids:
+        semester_activation_task.delay(semester_id)
+
+    logger.info('Session %s activated, cascaded to %s semester(s)', session_id, len(semester_ids))
+    return f'Session {session_id} has been activated successfully!'
+
+
+@shared_task
+def session_availability_task(session_id):
+    session = AcademicSession.objects.filter(id=session_id).first()
+    if not session:
+        logger.warning('session_availability_task fired for missing session_id=%s', session_id)
+        return f'Session {session_id} availability window has opened'
+
+    if session.status != 'Initiated':
+        logger.debug(
+            'session_availability_task: session_id=%s status=%s, expected Initiated, no-op',
+            session_id, session.status
+        )
+        return "Session not in Initiated state"
+
+    session.status = 'Available'
+    session.save()
+    semester_ids = list(Semester.objects.filter(session_id=session_id).values_list('semester_id', flat=True))
+    for semester_id in semester_ids:
+        cache_semester_enrollment_data_task.delay(semester_id)
+
+    logger.info(
+        'Session %s availability window opened, refreshed enrollment cache for %s semester(s)',
+        session_id, len(semester_ids)
+    )
+    return f'Session {session_id} availability window has opened'
+
+
+@shared_task
+def session_closing_task(session_id):
+    session = AcademicSession.objects.filter(id=session_id).first()
+    if not session:
+        logger.warning('session_closing_task fired for missing session_id=%s', session_id)
+        return f'Session {session_id} has been closed successfully!'
+
+    session.status = 'Completed'
+    session.save()
+    semester_ids = list(Semester.objects.filter(session_id=session_id).values_list('semester_id', flat=True))
+    for semester_id in semester_ids:
+        semester_closing_task.delay(semester_id)
+
+    logger.info('Session %s closed, cascaded to %s semester(s)', session_id, len(semester_ids))
+    return f'Session {session_id} has been closed successfully!'
+
+
+@shared_task
+def reconcile_lifecycle_states():
+    """
+    Safety-net sweep for the eta-scheduled activation/availability/closing tasks.
+    If a scheduled task is ever lost (broker restart, worker crash, etc.), this
+    catches any Semester/AcademicSession whose deadline has already passed but
+    whose status never advanced, and re-fires the same task that should have
+    fired originally. All of those tasks already guard against double-firing,
+    so re-triggering here is always safe.
+
+    Finding anything to fix here means an eta-scheduled task was lost upstream —
+    that's logged at WARNING since it's a symptom of a real problem (broker
+    restart, worker crash, etc.), not routine behavior.
+    """
+    now = timezone.now()
+    caught = []
+
+    for semester in Semester.objects.filter(status='Inactive', activation_deadline__lte=now):
+        semester_activation_task.delay(semester.semester_id)
+        caught.append(f'semester {semester.semester_id} activation')
+
+    for semester in Semester.objects.filter(status='Active', closing_deadline__isnull=False, closing_deadline__lte=now):
+        semester_closing_task.delay(semester.semester_id)
+        caught.append(f'semester {semester.semester_id} closing')
+
+    for session in AcademicSession.objects.filter(status='Initiated', activation_deadline__isnull=False, activation_deadline__lte=now):
+        session_activation_task.delay(session.id)
+        caught.append(f'session {session.id} activation')
+
+    for session in AcademicSession.objects.filter(status='Initiated', activation_deadline__isnull=False):
+        if session.availability_deadline and session.availability_deadline <= now:
+            session_availability_task.delay(session.id)
+            caught.append(f'session {session.id} availability')
+
+    for session in AcademicSession.objects.filter(status='Active', closing_deadline__isnull=False, closing_deadline__lte=now):
+        session_closing_task.delay(session.id)
+        caught.append(f'session {session.id} closing')
+
+    if caught:
+        logger.warning(
+            'reconcile_lifecycle_states caught %s missed transition(s) — an eta-scheduled task '
+            'was likely lost upstream: %s', len(caught), caught
+        )
+    else:
+        logger.debug('reconcile_lifecycle_states: nothing to reconcile')
+
+    return 'Lifecycle reconciliation sweep completed'
 
 
 # Data Caching Tasks
@@ -221,7 +356,7 @@ def cache_courses_data_task(user_id):
 def cache_semester_data_task(user_id):
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
-    print(custom_request)
+    logger.debug('cache_semester_data_task running for user_id=%s', user_id)
     context = {'request': custom_request}
 
     queryset = Semester.objects.all()
@@ -232,7 +367,7 @@ def cache_semester_data_task(user_id):
 
     classes = Class.objects.all()
     for each in classes:
-        class_data = queryset.filter(semesterdetails__student_class=each.class_id).distinct()
+        class_data = queryset.filter(associated_class=each.class_id)
         cache_key = f'admin:semesters:class:{each.class_id}'
         cache.delete(cache_key)
         serializer = SemesterSerializer(class_data,context=context, many=True)
@@ -313,7 +448,11 @@ def cache_semester_enrollment_data_task(semester_id):
     if not semester:
         return "Semester does not exist"
 
-    cache_key = f'admin:enrollments:semester:{semester_id}'
+    class_id = semester.associated_class_id
+    if not class_id:
+        return "Semester has no associated class"
+
+    cache_key = f'enrollments:{class_id}:semester:allocations'
 
     allocations = CourseAllocation.objects.filter(semester=semester).select_related('faculty__employee_id', 'course').all()
     data = []

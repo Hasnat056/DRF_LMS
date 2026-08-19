@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 from datetime import timedelta, datetime
 from decimal import Decimal
@@ -20,6 +21,8 @@ from django.contrib.auth.models import User
 from FacultyModule.serializers import LectureSerializer, AssessmentSerializer
 from StudentModule.serializers import ReviewsSerializer
 from .mixins import PersonSerializerMixin, ResultCalculationMixin
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -478,7 +481,6 @@ class SemesterDetailSerializer(serializers.ModelSerializer):
         fields = [
             'course',
             'course_name',
-            'student_class',
             'semester'
         ]
     def get_course_name(self, obj) -> str:
@@ -523,7 +525,7 @@ class SchemeOfStudiesField(serializers.Field):
         return obj
 
     def to_representation(self, obj):
-        semester_list = Semester.objects.filter(semesterdetails__student_class=obj.class_id).distinct().prefetch_related(
+        semester_list = Semester.objects.filter(associated_class=obj.class_id).prefetch_related(
             'semesterdetails_set__course'
         )
         semester_serializer_list = []
@@ -566,12 +568,12 @@ class ClassSerializer(serializers.ModelSerializer):
 
         created_semesters_list = []
         for i in range(numbers_of_semesters):
-            semester = Semester.objects.create(semester_no=i+1)
+            semester = Semester.objects.create(semester_no=i+1, associated_class=new_class)
             created_semesters_list.append(semester)
 
         initial_semesterdetails_list = []
         for each in created_semesters_list:
-            semester_detail = SemesterDetails.objects.create(semester=each, student_class=new_class)
+            semester_detail = SemesterDetails.objects.create(semester=each)
             initial_semesterdetails_list.append(semester_detail)
 
         return new_class
@@ -588,15 +590,14 @@ class ClassSerializer(serializers.ModelSerializer):
         if not scheme_of_studies:
             return instance
 
-        print(scheme_of_studies)
+        logger.debug('Updating scheme_of_studies=%s', scheme_of_studies)
 
-        semester_ids = [s['semester'] for s in scheme_of_studies]
+        semester_ids = [s['semester_id'] for s in scheme_of_studies]
         semester_queryset = get_list_or_404(Semester, semester_id__in=semester_ids)
         loaded_semesters = {each.semester_id: each for each in semester_queryset}
 
         for each_semester in scheme_of_studies:
-            semester = loaded_semesters[each_semester['semester']]
-            #print(semester)
+            semester = loaded_semesters[each_semester['semester_id']]
             if semester:
                 semester_detail_set = each_semester.pop('semesterdetails_set')
                 if len(semester_detail_set) > 1 or (
@@ -610,10 +611,10 @@ class ClassSerializer(serializers.ModelSerializer):
                     loaded_course_codes = {each.course_code: each for each in course_queryset}
                     for each in semester_detail_set:
                         course = loaded_course_codes[each['course']]
-                        SemesterDetails.objects.create(course=course, student_class=instance, semester=semester)
+                        SemesterDetails.objects.create(course=course, semester=semester)
 
                 if 'session' in each_semester:
-                    semester.session = each_semester['session']
+                    semester.session_id = each_semester['session']
                 semester.save()
 
             else:
@@ -745,7 +746,7 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
             fields['semester'].queryset = Semester.objects.none()
             return fields
 
-        queryset = Semester.objects.filter(status='Inactive',session__isnull=False, activation_deadline__isnull=False)
+        queryset = Semester.objects.filter(status='Inactive', session__status='Initiated', activation_deadline__isnull=False)
         if queryset.exists():
             fields['semester'].queryset = queryset
         else:
@@ -1027,7 +1028,7 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         row_count = 0
         error_rows = []
         file = validated_data['file']
-        #print(file)
+        logger.info('Processing bulk upload file=%s', file.name)
         if file.name.endswith('.csv'):
             decoded_file = io.TextIOWrapper(file.file, encoding='utf-8-sig')
             file_data = csv.DictReader(decoded_file)
@@ -1118,6 +1119,113 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         return parsed_row
 
 
+class SessionSerializer(serializers.ModelSerializer):
+    url = serializers.HyperlinkedIdentityField(
+        view_name='Admin:session-detail',
+        lookup_field='id',
+    )
+    availability_deadline = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = AcademicSession
+        fields = [
+            'url',
+            'id',
+            'period',
+            'year',
+            'status',
+            'activation_deadline',
+            'availability_delta',
+            'availability_deadline',
+            'closing_deadline',
+        ]
+        extra_kwargs = {
+            'status': {'read_only': True},
+        }
+
+    def get_extra_kwargs(self):
+        extra_kwargs = super().get_extra_kwargs()
+        if isinstance(self.instance, AcademicSession):
+            extra_kwargs['year'] = {'read_only': True}
+            if self.instance.status != 'Active':
+                extra_kwargs['closing_deadline'] = {'read_only': True}
+        return extra_kwargs
+
+    def validate_year(self, value):
+        if value < timezone.now().year:
+            raise serializers.ValidationError('Year cannot be in the past')
+        return value
+
+    def validate_activation_deadline(self, value):
+        if value and value < timezone.now():
+            raise serializers.ValidationError('Activation deadline cannot be in the past')
+        if value and value > timezone.now() + timedelta(weeks=4):
+            raise serializers.ValidationError('Activation deadline cannot be more than 4 weeks in the future')
+        return value
+
+    def validate_closing_deadline(self, value):
+        if value and value < timezone.now():
+            raise serializers.ValidationError('Closing deadline cannot be in the past')
+        if value and self.instance and self.instance.activation_deadline and value <= self.instance.activation_deadline:
+            raise serializers.ValidationError('Closing deadline must be after activation deadline')
+        return value
+
+    def update(self, instance, validated_data):
+        if 'activation_deadline' in validated_data:
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.status = 'Initiated'
+            instance.save()
+
+            activation_cache_key = f'session:activation:{instance.id}'
+            old_task_id = cache.get(activation_cache_key)
+            if old_task_id:
+                app.control.revoke(old_task_id, terminate=True)
+                cache.delete(activation_cache_key)
+                logger.info('Revoked previous activation task for session_id=%s', instance.id)
+
+            availability_cache_key = f'session:availability:{instance.id}'
+            old_task_id = cache.get(availability_cache_key)
+            if old_task_id:
+                app.control.revoke(old_task_id, terminate=True)
+                cache.delete(availability_cache_key)
+                logger.info('Revoked previous availability task for session_id=%s', instance.id)
+
+            from .tasks import session_activation_task, session_availability_task
+
+            task = session_activation_task.apply_async(args=[instance.id], eta=instance.activation_deadline)
+            cache.set(activation_cache_key, task.id, timeout=None)
+
+            task = session_availability_task.apply_async(args=[instance.id], eta=instance.availability_deadline)
+            cache.set(availability_cache_key, task.id, timeout=None)
+
+            logger.info(
+                'Session %s set to Initiated: activation scheduled for %s, availability for %s',
+                instance.id, instance.activation_deadline, instance.availability_deadline
+            )
+            return instance
+
+        if 'closing_deadline' in validated_data:
+            instance.closing_deadline = validated_data['closing_deadline']
+            instance.save()
+
+            closing_cache_key = f'session:closing:{instance.id}'
+            old_task_id = cache.get(closing_cache_key)
+            if old_task_id:
+                app.control.revoke(old_task_id, terminate=True)
+                cache.delete(closing_cache_key)
+                logger.info('Revoked previous closing task for session_id=%s', instance.id)
+
+            from .tasks import session_closing_task
+            task = session_closing_task.apply_async(args=[instance.id], eta=instance.closing_deadline)
+            cache.set(closing_cache_key, task.id, timeout=None)
+
+            logger.info('Session %s closing scheduled for %s', instance.id, instance.closing_deadline)
+            return instance
+
+        return super().update(instance, validated_data)
+
+
 class SemesterSerializer(serializers.ModelSerializer):
     courseallocation_set = CourseAllocationSerializer(many=True, read_only=True)
     semesterdetails_set = SemesterDetailSerializer(many=True, read_only=True)
@@ -1189,9 +1297,8 @@ class SemesterSerializer(serializers.ModelSerializer):
         )
 
     def get_associated_class(self, obj) -> str:
-        linked_class = Class.objects.filter(semesterdetails__semester=obj.semester_id).distinct()
-        if linked_class.exists():
-            return str(linked_class.first())
+        if obj.associated_class:
+            return str(obj.associated_class)
         return 'None'
 
 
@@ -1211,9 +1318,9 @@ class SemesterSerializer(serializers.ModelSerializer):
 
         cache_key = f'semester:activation:{instance.semester_id}'
         if 'activation_deadline' in validated_data:
-            associated_class = Class.objects.filter(semesterdetails__semester=instance.semester_id).first()
+            associated_class = instance.associated_class
             if associated_class:
-               conflicting_semester = (Semester.objects.filter(semesterdetails__student_class=associated_class, activation_deadline__isnull=False).exclude(
+               conflicting_semester = (Semester.objects.filter(associated_class=associated_class, activation_deadline__isnull=False).exclude(
                    semester_id=instance.semester_id
                ).exclude(
                    status='Completed'
@@ -1221,10 +1328,18 @@ class SemesterSerializer(serializers.ModelSerializer):
 
                if conflicting_semester:
                     if conflicting_semester.status == 'Active':
+                        logger.warning(
+                            'Rejected activation_deadline for semester_id=%s: class %s already has active semester_id=%s',
+                            instance.semester_id, associated_class, conflicting_semester.semester_id
+                        )
                         raise serializers.ValidationError(
                             f"Class: {associated_class} already has an active semester: {conflicting_semester}."
                         )
                     if conflicting_semester.status == 'Inactive':
+                        logger.warning(
+                            'Rejected activation_deadline for semester_id=%s: class %s already has scheduled semester_id=%s',
+                            instance.semester_id, associated_class, conflicting_semester.semester_id
+                        )
                         raise serializers.ValidationError(
                             f"Class: {associated_class} already has a semester scheduled for activation: {conflicting_semester}. Cancel it first."
                         )
@@ -1240,8 +1355,10 @@ class SemesterSerializer(serializers.ModelSerializer):
             if old_task_id:
                 app.control.revoke(old_task_id, terminate=True)
                 cache.delete(cache_key)
+                logger.info('Revoked previous activation task for semester_id=%s', instance.semester_id)
 
             if validated_data['activation_deadline'] is None:
+                logger.info('Activation cancelled for semester_id=%s', instance.semester_id)
                 return instance
 
             from .tasks import semester_activation_task, cache_semester_enrollment_data_task
@@ -1250,6 +1367,9 @@ class SemesterSerializer(serializers.ModelSerializer):
             cache.set(cache_key, task.id, timeout=None)
             cache_semester_enrollment_data_task.delay(instance.semester_id)
 
+            logger.info(
+                'Semester %s activation scheduled for %s', instance.semester_id, instance.activation_deadline
+            )
             return instance
 
         if 'closing_deadline' in validated_data:
@@ -1261,6 +1381,10 @@ class SemesterSerializer(serializers.ModelSerializer):
 
 
             if errors:
+                logger.warning(
+                    'Rejected closing_deadline for semester_id=%s: %s enrollment(s) missing results',
+                    instance.semester_id, len(errors)
+                )
                 raise serializers.ValidationError(errors)
 
 
@@ -1272,11 +1396,15 @@ class SemesterSerializer(serializers.ModelSerializer):
             if old_task_id:
                 app.control.revoke(old_task_id, terminate=True)
                 cache.delete(closing_cache_key)
+                logger.info('Revoked previous closing task for semester_id=%s', instance.semester_id)
 
             from .tasks import semester_closing_task
             task = semester_closing_task.apply_async(args=[instance.semester_id], eta=instance.closing_deadline)
             cache.set(closing_cache_key, task.id, timeout=None)
 
+            logger.info(
+                'Semester %s closing scheduled for %s', instance.semester_id, instance.closing_deadline
+            )
             return instance
 
         return instance

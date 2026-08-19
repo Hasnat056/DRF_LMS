@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # -----------------------------
 # Copy Django project files
 # -----------------------------
-COPY . /app/
+COPY --chown=drfuser:drfuser . /app/
 
 
 USER drfuser

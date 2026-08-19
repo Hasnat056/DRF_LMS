@@ -63,8 +63,13 @@ class StudentEnrollmentCreatePermission(permissions.BasePermission):
         if request.user.is_authenticated:
             if request.user.groups.filter(name='Student').exists():
                 student = Student.objects.filter(student_id__user=request.user).first()
-                cache_key = f'enrollments:{student.student_class.class_id}:semester:allocations'
-                if not student or not cache.get(cache_key):
+                if not student:
+                    return False
+                eligible = CourseAllocation.objects.filter(
+                    semester__associated_class=student.student_class,
+                    semester__session__status='Available',
+                ).exists()
+                if not eligible:
                     return False
                 request.student = student
                 return True

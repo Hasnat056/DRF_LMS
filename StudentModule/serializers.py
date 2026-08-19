@@ -1,9 +1,12 @@
+import logging
 from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import  serializers
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from Models.models import *
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -331,7 +334,6 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
 
 
     def get_percentage(self, obj) -> float:
-        print(obj)
         if obj:
             attendance = Attendance.objects.filter(enrollment=obj, lecture__allocation=obj.allocation)
             total = attendance.count()

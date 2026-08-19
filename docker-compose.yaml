@@ -1,19 +1,29 @@
 services:
   # Redis
   redis-server:
-    image: redis/redis-stack
-    container_name: redis-server
+    image: redis:latest
+    container_name: nexusapi-redis-server
+    command: redis-server --appendonly yes
+    restart: unless-stopped
     ports:
       - "6379:6379"
       - "8001:8001"
+    volumes:
+      - redis_data:/data
     networks:
       - nexus_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   database:
     env_file:
       - .env
     image: mysql:8.0
-    container_name: database
+    container_name: nexusapi-database
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_USER: ${DB_USER}
@@ -34,9 +44,11 @@ services:
     env_file:
       - .env
     build: .
-    container_name: backend
+    container_name: nexusapi-backend
+    restart: unless-stopped
     volumes:
       - code_files:/code
+      - .:/app
       - static_files:/app/staticfiles
     ports:
       - "8000:8000"
@@ -44,7 +56,7 @@ services:
       database:
         condition: service_healthy
       redis-server:
-        condition: service_started
+        condition: service_healthy
       python-compiler:
         condition: service_started
       c-compiler:
@@ -59,18 +71,42 @@ services:
     env_file:
       - .env
     build: .
-    container_name: celery-worker
+    container_name: nexusapi-celery-worker
     command: celery -A NexusAPI worker --loglevel=info
+    restart: unless-stopped
+    volumes:
+      - .:/app
     depends_on:
-      - redis-server
-      - backend
+      redis-server:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - nexus_network
+
+  # Celery beat (periodic scheduler — drives the lifecycle reconciliation sweep)
+  celery-beat:
+    env_file:
+      - .env
+    build: .
+    container_name: nexusapi-celery-beat
+    command: celery -A NexusAPI beat --loglevel=info
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    depends_on:
+      redis-server:
+        condition: service_healthy
+      backend:
+        condition: service_started
     networks:
       - nexus_network
 
   # Nginx
   nginx:
     image: nginx:alpine
-    container_name: nginx
+    container_name: nexusapi-nginx
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -87,6 +123,7 @@ services:
   # Python compiler
   python-compiler:
     build: ./Compilers/python_compiler
+    restart: unless-stopped
     volumes:
       - code_files:/code
     networks:
@@ -97,6 +134,7 @@ services:
   # C/C++ compiler
   c-compiler:
     build: ./Compilers/c_compiler
+    restart: unless-stopped
     volumes:
       - code_files:/code
     networks:
@@ -107,6 +145,7 @@ services:
   # Java compiler
   java-compiler:
     build: ./Compilers/java_compiler
+    restart: unless-stopped
     volumes:
       - code_files:/code
     networks:
@@ -118,6 +157,7 @@ volumes:
   code_files:
   mysql_data:
   static_files:
+  redis_data:
 
 networks:
   nexus_network:

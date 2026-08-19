@@ -1,3 +1,4 @@
+import logging
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, status
@@ -12,6 +13,8 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from Compilers.serializers import CompilerSerializer
 from StudentModule.serializers import *
 from .mixins import *
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema(
@@ -162,6 +165,10 @@ class StudentAssessmentUploadView(
         try:
             serializer.save()
         except CloudinaryBadRequest as e:
+            logger.warning(
+                'Cloudinary rejected student upload for AssessmentChecked id=%s: %s',
+                serializer.instance.id if serializer.instance else None, e
+            )
             raise ValidationError({'student_upload': str(e)})
 
 

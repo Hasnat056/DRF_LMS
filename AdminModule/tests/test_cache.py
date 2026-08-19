@@ -407,7 +407,7 @@ class TestSemestersListCache:
         assert cache.get(key) is not None
 
         response = admin_client.get(
-            f'{ADMIN}/semesters/?semesterdetails__student_class={batch_class.class_id}'
+            f'{ADMIN}/semesters/?associated_class={batch_class.class_id}'
         )
         assert response.status_code == 200
 
@@ -424,7 +424,7 @@ class TestSemestersListCache:
         """
         admin_client.get(f'{ADMIN}/semesters/')
         response = admin_client.get(
-            f'{ADMIN}/semesters/?semesterdetails__student_class={batch_class.class_id}'
+            f'{ADMIN}/semesters/?associated_class={batch_class.class_id}'
         )
         assert response.status_code == 200
 
@@ -498,7 +498,6 @@ class TestAllocationsListCache:
         from Models.models import SemesterDetails
         SemesterDetails.objects.get_or_create(
             semester=inactive_semester,
-            student_class=inactive_semester.semesterdetails_set.first().student_class,
             course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {

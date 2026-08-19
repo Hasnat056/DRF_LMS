@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.contrib.auth.models import User, Group
@@ -11,6 +12,8 @@ from django.urls import reverse
 from NexusAPI import settings
 
 from .permissions import *
+
+logger = logging.getLogger(__name__)
 
 class PersonSerializerMixin:
     def create_mixin(self, validated_data, model):
@@ -116,7 +119,7 @@ class PersonSerializerMixin:
                 person.qualification_set.all().delete()
             for each in qualification_data:
                 qualification = Qualification.objects.create(person=person, **each)
-                print(qualification)
+                logger.debug('Created qualification %s for person %s', qualification, person.person_id)
 
         return instance
 

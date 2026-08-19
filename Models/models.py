@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -69,6 +70,41 @@ class Class(models.Model):
         return f"{self.program.program_id}-{self.batch_year}"
 
 
+class AcademicSession(models.Model):
+    PERIOD_CHOICES = [
+        ('Fall', 'Fall'),
+        ('Spring', 'Spring')
+    ]
+
+    STATUS_CHOICES = [
+        ('Inactive', 'Inactive'),
+        ('Initiated', 'Initiated'),
+        ('Available', 'Available'),
+        ('Active', 'Active'),
+        ('Completed', 'Completed'),
+    ]
+    id = models.AutoField(primary_key=True)
+    period = models.CharField(max_length=10, choices=PERIOD_CHOICES)
+    year = models.PositiveIntegerField(default=timezone.now().year)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Inactive', db_index=True)
+    activation_deadline = models.DateTimeField(blank=True, null=True)
+    availability_delta = models.PositiveIntegerField(default=7)
+    closing_deadline = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        unique_together = (('period', 'year'),)
+        ordering = ['year', 'period']
+
+    def __str__(self):
+        return f"{self.period}-{self.year}"
+
+    @property
+    def availability_deadline(self):
+        if self.activation_deadline is None:
+            return None
+        return self.activation_deadline - timedelta(days=self.availability_delta)
+
+
 
 class Semester(models.Model):
     STATUS_CHOICES = [
@@ -79,20 +115,18 @@ class Semester(models.Model):
     semester_id = models.AutoField(primary_key=True)
     semester_no = models.PositiveIntegerField()
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Inactive', db_index=True)
-    session = models.CharField(max_length=15, blank=True, null=True, db_index=True)
+    session = models.ForeignKey('AcademicSession', on_delete=models.RESTRICT, db_index=True, blank=True, null=True)
     activation_deadline = models.DateTimeField(blank=True, null=True)
     closing_deadline = models.DateTimeField(blank=True, null=True)
+    associated_class = models.ForeignKey('Class', on_delete=models.RESTRICT)
 
     class Meta:
         db_table = 'semester'
         ordering = ['semester_id', 'status']
 
     def __str__(self):
-        class_id = self.semesterdetails_set.values_list('student_class', flat=True).first()
-        if class_id:
-            class_object = Class.objects.get(class_id=class_id)
-            class_name = f'{class_object.program.program_id} {class_object.batch_year}'
-            return f"{class_name}-0{self.semester_no}-{self.session}"
+        if self.associated_class:
+            return f"{self.associated_class}-0{self.semester_no}-{self.session}"
         else:
             return f"None-0{self.semester_no}-{self.session}"
 
@@ -120,11 +154,10 @@ class Course(models.Model):
 class SemesterDetails (models.Model):
     id = models.AutoField(primary_key=True)
     course = models.ForeignKey('Course', on_delete=models.CASCADE, blank=True, null=True)
-    student_class = models.ForeignKey('Class', on_delete=models.RESTRICT,)
     semester = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
     class Meta:
         db_table = 'semesterDetails'
-        unique_together = (('course', 'student_class', 'semester'),)
+        unique_together = (('course', 'semester'),)
         ordering = ['id']
 
 

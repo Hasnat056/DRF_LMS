@@ -50,8 +50,8 @@ class TestClassAPICreate:
 
         new_class = Class.objects.get(program=program, batch_year=2023)
         sem_count = Semester.objects.filter(
-            semesterdetails__student_class=new_class
-        ).distinct().count()
+            associated_class=new_class
+        ).count()
         assert sem_count == program.total_semesters
 
     def test_create_class_returns_class_id(self, admin_client, program):
@@ -80,7 +80,7 @@ class TestClassAPIRetrieve:
     ):
         """scheme_of_studies must contain semesterdetails_set with course info."""
         SemesterDetails.objects.filter(
-            semester=inactive_semester, student_class=batch_class
+            semester=inactive_semester
         ).update(course=course)
 
         url = reverse('Admin:class-detail', kwargs={'class_id': batch_class.class_id})
@@ -118,14 +118,14 @@ class TestClassAPIUpdate:
         response = admin_client.patch(url, {
             'scheme_of_studies': [
                 {
-                    'semester': inactive_semester.semester_id,
+                    'semester_id': inactive_semester.semester_id,
                     'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
         }, format='json')
         assert response.status_code == 200
         assert SemesterDetails.objects.filter(
-            semester=inactive_semester, course=course, student_class=batch_class
+            semester=inactive_semester, course=course
         ).exists()
 
     def test_update_without_scheme_of_studies_returns_400(
@@ -190,7 +190,7 @@ class TestSemesterAPIActivationDeadline:
         """If the class already has an Active semester, setting activation_deadline should fail."""
         # make sure both semesters are linked to same class
         SemesterDetails.objects.get_or_create(
-            semester=active_semester, student_class=batch_class,
+            semester=active_semester,
             defaults={'course': None}
         )
         url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
@@ -237,7 +237,6 @@ class TestAllocationAPICreate:
         # ensure course is in semester scheme
         SemesterDetails.objects.get_or_create(
             semester=inactive_semester,
-            student_class=inactive_semester.semesterdetails_set.first().student_class,
             course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
@@ -282,7 +281,6 @@ class TestAllocationAPICreate:
         """Second identical allocation must return 400."""
         SemesterDetails.objects.get_or_create(
             semester=inactive_semester,
-            student_class=inactive_semester.semesterdetails_set.first().student_class,
             course=course,
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {

@@ -1,3 +1,4 @@
+import logging
 from django.db.models import Count
 from django.db.models.functions import ExtractYear
 from django.http import HttpResponse
@@ -22,6 +23,8 @@ from drf_spectacular.utils import (
 )
 from rest_framework.views import APIView
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema(
@@ -378,26 +381,23 @@ class StudentListCreateAPIView(
         cache_key = 'admin:student_list'
         cached_data = cache.get(cache_key)
         if cached_data is None:
-            #print('Cache Miss')
             cache_student_data_task.delay(request.user.id)
             return super().list(request, *args, **kwargs)
 
         else:
             query_params = request.query_params
-            #print(query_params)
             filter_params = {
                 key : value for key,value in query_params.items() if key!='page' and value !=''
             }
-            #print(filter_params)
             if not query_params or not  filter_params:
-                print('Cache Hit')
+                logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(cached_data)
                 if page is not None:
                     return self.get_paginated_response(page)
                 return Response(cached_data, status=status.HTTP_200_OK)
 
             if 'search' in query_params or 'ordering' in filter_params or len(filter_params)>2:
-                print('Cache Miss')
+                logger.debug('Cache miss for %s', cache_key)
                 return super().list(request, *args, **kwargs)
 
             if len(filter_params)==2:
@@ -406,7 +406,7 @@ class StudentListCreateAPIView(
                     data = cache.get(cache_key)
                     if data is None:
                         return super().list(request, *args, **kwargs)
-                    print('Cache Hit')
+                    logger.debug('Cache hit for %s', cache_key)
                     page = self.paginate_queryset(data)
                     if page is not None:
                         return self.get_paginated_response(page)
@@ -419,7 +419,7 @@ class StudentListCreateAPIView(
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
-                print('Cache Hit')
+                logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
                 if page is not None:
                     return self.get_paginated_response(page)
@@ -430,7 +430,7 @@ class StudentListCreateAPIView(
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
-                print('Cache Hit')
+                logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
                 if page is not None:
                     return self.get_paginated_response(page)
@@ -441,7 +441,7 @@ class StudentListCreateAPIView(
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
-                print('Cache Hit')
+                logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
                 if page is not None:
                     return self.get_paginated_response(page)
@@ -452,7 +452,7 @@ class StudentListCreateAPIView(
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
-                print('Cache Hit')
+                logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
                 if page is not None:
                     return self.get_paginated_response(page)
@@ -516,7 +516,6 @@ class ProgramListCreateAPIView(
     def list(self, request, *args, **kwargs):
         cache_key = f'admin:programs_list'
         cached_data = cache.get(cache_key)
-        #print(cached_data)
 
         if cached_data is None:
             cache_programs_data_task.delay(request.user.id)
@@ -597,7 +596,7 @@ class CourseListCreateAPIView(
         cache_key = 'admin:courses_list'
         cached_data = cache.get(cache_key)
         if cached_data is None:
-            print('Cache Miss:1')
+            logger.debug('Cache miss for %s', cache_key)
             cache_courses_data_task.delay(request.user.id)
             return super().list(request, *args, **kwargs)
 
@@ -606,11 +605,11 @@ class CourseListCreateAPIView(
                 key : value for key, value in request.query_params.items() if key!= 'page'
             }
             if filter_params:
-                print('Cache Miss:2')
+                logger.debug('Cache miss for %s (filtered)', cache_key)
                 return super().list(request, *args, **kwargs)
 
             page = self.paginate_queryset(cached_data)
-            print('Cache Hit')
+            logger.debug('Cache hit for %s', cache_key)
             if page is not None:
                 return self.get_paginated_response(page)
             return Response(cached_data, status=status.HTTP_200_OK)
@@ -639,6 +638,29 @@ class CourseRetrieveUpdateDestroyAPIView(
 
 
 
+class SessionListCreateAPIView(
+    IsSuperUserOrAdminMixin,
+    generics.ListCreateAPIView
+):
+    queryset = AcademicSession.objects.all()
+    serializer_class = SessionSerializer
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class SessionRetrieveUpdateAPIView(
+    IsSuperUserOrAdminMixin,
+    generics.RetrieveUpdateAPIView
+):
+    queryset = AcademicSession.objects.all()
+    serializer_class = SessionSerializer
+    lookup_field = 'id'
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+
 class SemesterListAPIView(
     IsSuperUserOrAdminMixin,
     generics.ListAPIView
@@ -646,7 +668,7 @@ class SemesterListAPIView(
     queryset = Semester.objects.all()
     serializer_class = SemesterSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['semesterdetails__student_class']
+    filterset_fields = ['associated_class']
     
     def list(self, request, *args, **kwargs):
         cache_key = 'admin:semesters_list'
@@ -661,7 +683,7 @@ class SemesterListAPIView(
         }
         
         if not query_params or not filter_params:
-            print('Cache Hit')
+            logger.debug('Cache hit for %s', cache_key)
             page = self.paginate_queryset(cached_data)
             if page is not None:
                 return self.get_paginated_response(page)
@@ -670,12 +692,12 @@ class SemesterListAPIView(
         if 'ordering' in filter_params or 'search' in filter_params:
             return super().list(request, *args, **kwargs)
 
-        if 'semesterdetails__class_' in filter_params:
-            cache_key= f'admin:semesters:class:{filter_params.get('semesterdetails__class_')}'
+        if 'associated_class' in filter_params:
+            cache_key= f'admin:semesters:class:{filter_params.get('associated_class')}'
             data = cache.get(cache_key)
             if data is None:
                 return super().list(request, *args, **kwargs)
-            print('Cache Hit')
+            logger.debug('Cache hit for %s', cache_key)
             page = self.paginate_queryset(data)
             if page is not None:
                 return self.get_paginated_response(page)

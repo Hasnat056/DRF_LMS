@@ -43,12 +43,19 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'cloudinary_storage',
     'django.contrib.staticfiles',
+    # cloudinary_storage ships its own `collectstatic` that's a near-total
+    # no-op unless STATICFILES_STORAGE is StaticCloudinaryStorage (it isn't —
+    # WhiteNoise is). django.core.management.get_commands() resolves name
+    # collisions by walking INSTALLED_APPS in reverse, so whichever app is
+    # listed FIRST wins — keep staticfiles above cloudinary_storage so the
+    # real collectstatic runs, not cloudinary's stub.
+    'cloudinary_storage',
     'rest_framework',
     'django_filters',
     'drf_spectacular',
     'cloudinary',
+    'corsheaders',
 
 
     'Models',
@@ -60,6 +67,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -110,7 +119,7 @@ STORAGES = {
        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage',
     },
     'staticfiles': {
-        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
 }
 
@@ -147,6 +156,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# WhiteNoise: serve static files from gunicorn/Django itself, so admin/DRF
+# CSS still works even if nginx is down or misconfigured (as it always is
+# in local dev, since nginx.conf is hardcoded for the production TLS certs).
+WHITENOISE_USE_FINDERS = DEBUG
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
@@ -255,6 +269,12 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+SERVER_EMAIL = EMAIL_HOST_USER
+
+# Admins to notify on 500 errors (via LOGGING's mail_admins handler below).
+# Set ADMIN_EMAIL in the environment to enable; empty by default (no-op).
+ADMIN_EMAIL = config('ADMIN_EMAIL', default='')
+ADMINS = [('NexusAPI Admin', ADMIN_EMAIL)] if ADMIN_EMAIL else []
 
 
 CLOUDINARY_STORAGE = {
@@ -264,11 +284,12 @@ CLOUDINARY_STORAGE = {
 }
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
-STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 
 
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost', cast=Csv())
+
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173', cast=Csv())
 
 
 # Security settings (only active when DEBUG=False)
@@ -283,3 +304,91 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000            # Set to 31536000 after SSL is confirmed working
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = False
+
+
+# Logging
+APP_LOG_LEVEL = 'DEBUG' if DEBUG else 'INFO'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'class': 'django.utils.log.AdminEmailHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'mail_admins'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'AdminModule': {
+            'handlers': ['console'],
+            'level': APP_LOG_LEVEL,
+            'propagate': False,
+        },
+        'FacultyModule': {
+            'handlers': ['console'],
+            'level': APP_LOG_LEVEL,
+            'propagate': False,
+        },
+        'StudentModule': {
+            'handlers': ['console'],
+            'level': APP_LOG_LEVEL,
+            'propagate': False,
+        },
+        'Models': {
+            'handlers': ['console'],
+            'level': APP_LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}
+
+
+# Sentry — real-time exception alerting. No-op unless SENTRY_DSN is set.
+SENTRY_DSN = config('SENTRY_DSN', default='')
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=config('SENTRY_ENVIRONMENT', default='development'),
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(),
+            # our own LOGGING config already filters what reaches ERROR level;
+            # mirror ERROR+ logs into Sentry as events, WARNING+ as breadcrumbs.
+            LoggingIntegration(level=None, event_level='ERROR'),
+        ],
+        send_default_pii=False,
+    )

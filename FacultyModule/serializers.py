@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta, datetime
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
@@ -8,6 +9,8 @@ from drf_spectacular.utils import extend_schema_field, inline_serializer
 from AdminModule.mixins import ResultCalculationMixin
 from Models.models import *
 from rest_framework import serializers, status
+
+logger = logging.getLogger(__name__)
 
 def get_faculty_allocation_serializer():
     from AdminModule.serializers import CourseAllocationSerializer
@@ -285,6 +288,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'student_info'
         ]
         list_serializer_class = CustomizedListSerializer
+        extra_kwargs = {'lecture': {'read_only': True}}
 
     @extend_schema_field(
         inline_serializer(
@@ -309,11 +313,12 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
 
     def validate(self, data):
-        allocation = CourseAllocation.objects.filter(allocation_id=data['lecture'].allocation.allocation_id).prefetch_related('enrollment_set')
+        lecture = self.instance.lecture if self.instance else data.get('lecture')
+        allocation = CourseAllocation.objects.filter(allocation_id=lecture.allocation.allocation_id).prefetch_related('enrollment_set')
         if not allocation.exists():
-            raise serializers.ValidationError(f'No course allocations available for lecture: {data["lecture"]}')
+            raise serializers.ValidationError(f'No course allocations available for lecture: {lecture}')
 
-        enrolled_students = allocation.first().enrollment_set.values_list('enrollment', flat=True)
+        enrolled_students = allocation.first().enrollment_set.values_list('enrollment_id', flat=True)
 
         if not allocation.exists() or  data['enrollment'].pk not in enrolled_students :
             raise serializers.ValidationError(f'Student {data["enrollment"]} does not exist for course allocation: {allocation}')
@@ -382,7 +387,7 @@ class LectureSerializer(serializers.ModelSerializer):
         lecture_no = lecture_count +1
         validated_data['lecture_no'] = lecture_no
 
-        print(validated_data)
+        logger.debug('Creating lecture with validated_data=%s', validated_data)
         attendance_set = {}
 
         if 'attendance_set' in validated_data:
@@ -519,7 +524,6 @@ class FacultyRequestsSerializer(
             allocation.status = 'Completed'
             allocation.save()
             instance.save()
-            #print(result_data)
 
             return instance
 

@@ -28,6 +28,9 @@ htmlcov/
 docker-data/
 *.pid
 
+# ===== Celery =====
+celerybeat-schedule
+
 # ===== VSCode / Editors =====
 .vscode/
 .idea/

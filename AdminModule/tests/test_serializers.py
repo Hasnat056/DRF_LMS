@@ -66,7 +66,7 @@ class TestClassSerializerCreate:
 
         new_class = serializer.save()
 
-        semesters = Semester.objects.filter(semesterdetails__student_class=new_class).distinct()
+        semesters = Semester.objects.filter(associated_class=new_class)
         assert semesters.count() == program.total_semesters
 
     def test_creates_semesterdetails_for_each_semester(self, admin_user, program):
@@ -77,7 +77,7 @@ class TestClassSerializerCreate:
 
         new_class = serializer.save()
 
-        details_count = SemesterDetails.objects.filter(student_class=new_class).count()
+        details_count = SemesterDetails.objects.filter(semester__associated_class=new_class).count()
         assert details_count == program.total_semesters
 
     def test_semester_numbers_are_sequential(self, admin_user, program):
@@ -88,8 +88,7 @@ class TestClassSerializerCreate:
         new_class = serializer.save()
 
         numbers = sorted(
-            Semester.objects.filter(semesterdetails__student_class=new_class)
-            .distinct()
+            Semester.objects.filter(associated_class=new_class)
             .values_list('semester_no', flat=True)
         )
         assert numbers == list(range(1, program.total_semesters + 1))
@@ -99,7 +98,7 @@ class TestClassSerializerCreate:
         data = {
             'program': program.program_id,
             'batch_year': 2026,
-            'scheme_of_studies': [{'semester': 999}],  # should be ignored
+            'scheme_of_studies': [{'semester_id': 999}],  # should be ignored
         }
         serializer = ClassSerializer(data=data, context=_ctx(admin_user))
         assert serializer.is_valid(), serializer.errors
@@ -121,7 +120,7 @@ class TestClassSerializerUpdate:
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester': inactive_semester.semester_id,
+                    'semester_id': inactive_semester.semester_id,
                     'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
@@ -134,7 +133,7 @@ class TestClassSerializerUpdate:
         serializer.save()
 
         assert SemesterDetails.objects.filter(
-            semester=inactive_semester, course=course,student_class=batch_class
+            semester=inactive_semester, course=course
         ).exists()
 
     def test_update_replaces_existing_courses(
@@ -145,13 +144,13 @@ class TestClassSerializerUpdate:
             course_code='OLD-001', course_name='Old Course', credit_hours=2, lab=False
         )
         SemesterDetails.objects.create(
-            semester=inactive_semester, student_class=batch_class, course=old_course
+            semester=inactive_semester, course=old_course
         )
 
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester': inactive_semester.semester_id,
+                    'semester_id': inactive_semester.semester_id,
                     'semesterdetails_set': [{'course': course.course_code}],
                 }
             ]
@@ -175,7 +174,7 @@ class TestClassSerializerUpdate:
         payload = {
             'scheme_of_studies': [
                 {
-                    'semester': 99999,
+                    'semester_id': 99999,
                     'semesterdetails_set': [{'course': None}],
                 }
             ]
@@ -196,18 +195,19 @@ class TestClassSerializerUpdate:
 @pytest.mark.django_db
 class TestSemesterSerializerFieldGuards:
 
-    def test_activation_deadline_past_becomes_readonly(self, admin_user):
+    def test_activation_deadline_past_becomes_readonly(self, admin_user, batch_class, academic_session):
         """Once activation_deadline has passed, it should be read-only."""
         semester = Semester.objects.create(
-            semester_no=1, status='Active', session='Fall-2024',
+            semester_no=1, status='Active', session=academic_session,
             activation_deadline=timezone.now() - timedelta(hours=1),
+            associated_class=batch_class,
         )
         serializer = SemesterSerializer(instance=semester, context=_ctx(admin_user))
         assert serializer.fields['activation_deadline'].read_only is True
 
-    def test_closing_deadline_readonly_before_activation_set(self, admin_user):
+    def test_closing_deadline_readonly_before_activation_set(self, admin_user, batch_class):
         """closing_deadline must be read-only if activation_deadline is not yet set."""
-        semester = Semester.objects.create(semester_no=1, status='Inactive')
+        semester = Semester.objects.create(semester_no=1, status='Inactive', associated_class=batch_class)
         serializer = SemesterSerializer(instance=semester, context=_ctx(admin_user))
         assert serializer.fields['closing_deadline'].read_only is True
 
@@ -221,12 +221,13 @@ class TestSemesterSerializerFieldGuards:
         assert not serializer.is_valid()
         assert 'activation_deadline' in serializer.errors
 
-    def test_closing_deadline_cannot_be_in_past(self, admin_user):
+    def test_closing_deadline_cannot_be_in_past(self, admin_user, batch_class, academic_session):
         """closing_deadline in the past should fail validation."""
         semester = Semester.objects.create(
-            semester_no=1, status='Active', session='Fall-2024',
+            semester_no=1, status='Active', session=academic_session,
             activation_deadline=timezone.now() - timedelta(hours=1),
             closing_deadline=timezone.now() + timedelta(days=30),
+            associated_class=batch_class,
         )
         data = {'closing_deadline': timezone.now() - timedelta(days=1)}
         serializer = SemesterSerializer(
@@ -245,12 +246,12 @@ class TestSemesterSerializerFieldGuards:
         """
         # link both semesters to same class
         SemesterDetails.objects.get_or_create(
-            semester=active_semester, student_class=batch_class,
-            defaults={'course_code': None}
+            semester=active_semester,
+            defaults={'course': None}
         )
         SemesterDetails.objects.get_or_create(
-            semester=inactive_semester, student_class=batch_class,
-            defaults={'course_code': None}
+            semester=inactive_semester,
+            defaults={'course': None}
         )
         data = {'activation_deadline': timezone.now() + timedelta(days=7)}
         serializer = SemesterSerializer(
@@ -320,7 +321,6 @@ class TestCourseAllocationSerializer:
         # ensure course is in semester scheme
         SemesterDetails.objects.get_or_create(
             semester=inactive_semester,
-            student_class=inactive_semester.semesterdetails_set.first().student_class,
             course=course,
         )
         data = {

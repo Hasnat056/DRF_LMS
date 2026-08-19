@@ -25,6 +25,9 @@ urlpatterns =[
     path('courses/', CourseListCreateAPIView.as_view()),
     path('courses/<str:course_code>/', CourseRetrieveUpdateDestroyAPIView.as_view(), name='course-detail'),
 
+    path ('sessions/', SessionListCreateAPIView.as_view()),
+    path ('sessions/<int:id>/', SessionRetrieveUpdateAPIView.as_view(), name='session-detail'),
+
     path ('semesters/', SemesterListAPIView.as_view()),
     path ('semesters/<int:semester_id>/', SemesterRetrieveUpdateAPIView.as_view(), name='semester-detail'),
     path ('semesters/<int:semester_id>/transcripts-create/', TranscriptBulkCreateAPIView.as_view(), name='semester-transcripts-create'),

@@ -74,6 +74,11 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Create /code (compiler upload dir, normally the code_files volume)
+        run: |
+          sudo mkdir -p /code
+          sudo chown "$(whoami)" /code
+
       - name: Wait for MySQL to be ready
         run: |
           until mysqladmin ping -h127.0.0.1 -P3306 -uroot -proot --silent; do

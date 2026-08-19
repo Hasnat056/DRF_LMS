@@ -20,6 +20,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            set -e
             cd /home/${{ secrets.VM_USER }}/NexusAPI
 
             echo "Pulling latest code..."
@@ -27,6 +28,12 @@ jobs:
 
             echo "Building and restarting containers..."
             docker compose up --build -d
+
+            echo "Running database migrations..."
+            docker compose exec -T backend python manage.py migrate
+
+            echo "Collecting static files..."
+            docker compose exec -T backend python manage.py collectstatic --noinput
 
             echo "Cleaning up unused images..."
             docker image prune -f

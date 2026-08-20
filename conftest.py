@@ -301,6 +301,11 @@ def faculty_client(faculty_instance):
 
 
 @pytest.fixture
+def student_user(student_instance):
+    return student_instance.student_id.user
+
+
+@pytest.fixture
 def student_client(student_instance):
     return auth_client(student_instance.student_id.user)
 

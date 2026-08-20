@@ -18,6 +18,7 @@ Covers:
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory
@@ -896,6 +897,23 @@ class TestChangeRequestSerializerUpdate:
         updated = serializer.save()
         assert updated.status == 'declined'
 
+    def test_decline_notifies_requester(self, admin_user, change_request):
+        from AdminModule.serializers import ChangeRequestSerializer
+        from Models.models import Notification
+        serializer = ChangeRequestSerializer(
+            instance=change_request,
+            data={'status': 'declined'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        notification = Notification.objects.get(
+            recipient=change_request.requested_by, verb='change_request_declined'
+        )
+        assert notification.object_id == change_request.pk
+
     def test_invalid_status_transition_is_no_op(self, admin_user, change_request):
         from AdminModule.serializers import ChangeRequestSerializer
         serializer = ChangeRequestSerializer(
@@ -958,6 +976,51 @@ class TestChangeRequestSerializerUpdate:
 
         from Models.models import Student
         assert not Student.objects.filter(pk=student_instance.pk).exists()
+
+    def test_apply_hod_change_notifies_new_and_old_hod(
+        self, admin_user, department, faculty_instance
+    ):
+        from AdminModule.serializers import ChangeRequestSerializer
+        from Models.models import ChangeRequest, Faculty, Person, Notification
+        from django.contrib.auth.models import User
+
+        old_hod_user = User.objects.create_user(username='oldhod@test.com', password='oldhodpass123')
+        old_hod_person = Person.objects.create(
+            person_id='NUM-CS-2024-9', first_name='Old', last_name='Hod', father_name='Father',
+            gender='Male', dob=date(1980, 1, 1), cnic='12345-1234567-9', contact_number='+923001234599',
+            institutional_email='oldhod@test.com', type='Faculty', user=old_hod_user,
+        )
+        old_hod = Faculty.objects.create(
+            employee_id=old_hod_person, department=department, designation='Lecturer',
+            joining_date=date(2019, 1, 1),
+        )
+        department.HOD = old_hod
+        department.save()
+
+        cr = ChangeRequest.objects.create(
+            change_type='hod_change',
+            department=department,
+            new_hod=faculty_instance,
+            requested_by=admin_user,
+            status='confirmed',
+            requested_at=timezone.now(),
+        )
+
+        serializer = ChangeRequestSerializer(
+            instance=cr,
+            data={'status': 'applied'},
+            partial=True,
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        assert Notification.objects.filter(
+            recipient=faculty_instance.employee_id.user, verb='hod_change_applied'
+        ).exists()
+        assert Notification.objects.filter(
+            recipient=old_hod_user, verb='hod_change_applied'
+        ).exists()
 
 
 # ===========================================================================

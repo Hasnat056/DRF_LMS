@@ -352,6 +352,16 @@ class TestStudentListCreate:
         assert r.status_code == 200
         assert r.data['count'] >= 1
 
+    def test_student_class_display_shows_readable_string(self, admin_client, student_instance, batch_class):
+        r = admin_client.get(f'{ADMIN}/students/')
+        assert r.status_code == 200
+        result = next(
+            row for row in r.data['results']
+            if row['person']['person_id'] == student_instance.student_id.person_id
+        )
+        assert result['student_class'] == batch_class.pk
+        assert result['student_class_display'] == str(batch_class)
+
     def test_list_cache_miss_triggers_cache_task(self, admin_client):
         cache.delete('admin:student_list')
         with patch('AdminModule.views.cache_student_data_task.delay') as mock_delay:
@@ -493,6 +503,18 @@ class TestDepartmentEndpoints:
             reverse('Admin:department-detail', kwargs={'department_id': 'NONE'})
         )
         assert r.status_code == 404
+
+    def test_setting_hod_notifies_nominated_faculty(self, admin_client, department, faculty_instance):
+        from Models.models import Notification
+        with patch('AdminModule.tasks.send_hod_request_mail.apply_async'):
+            r = admin_client.patch(
+                reverse('Admin:department-detail', kwargs={'department_id': department.department_id}),
+                {'HOD': faculty_instance.employee_id.person_id}, format='json'
+            )
+        assert r.status_code == 200
+        assert Notification.objects.filter(
+            recipient=faculty_instance.employee_id.user, verb='hod_nomination'
+        ).exists()
 
 
 # ===========================================================================
@@ -684,6 +706,73 @@ class TestCourseEndpoints:
         assert admin_client.get(
             reverse('Admin:course-detail', kwargs={'course_code': 'NONE-999'})
         ).status_code == 404
+
+
+# ===========================================================================
+# Session Endpoints
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestSessionListCreate:
+
+    def test_anon_returns_401(self, anon_client):
+        assert anon_client.get(f'{ADMIN}/sessions/').status_code == 401
+
+    def test_faculty_returns_403(self, faculty_client):
+        assert faculty_client.get(f'{ADMIN}/sessions/').status_code == 403
+
+    def test_admin_list_returns_200(self, admin_client, academic_session):
+        r = admin_client.get(f'{ADMIN}/sessions/')
+        assert r.status_code == 200
+        assert r.data['count'] >= 1
+
+    def test_filter_by_period(self, admin_client):
+        from Models.models import AcademicSession
+        fall = AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Initiated')
+
+        r = admin_client.get(f'{ADMIN}/sessions/?period=Fall')
+        assert r.status_code == 200
+        periods = [row['period'] for row in r.data['results']]
+        assert periods == ['Fall'] * len(periods)
+        assert fall.pk in [row['id'] for row in r.data['results']]
+
+    def test_filter_by_year(self, admin_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Initiated')
+
+        r = admin_client.get(f'{ADMIN}/sessions/?year=2025')
+        assert r.status_code == 200
+        assert all(row['year'] == 2025 for row in r.data['results'])
+
+    def test_filter_by_status(self, admin_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Active')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Inactive')
+
+        r = admin_client.get(f'{ADMIN}/sessions/?status=Active')
+        assert r.status_code == 200
+        assert all(row['status'] == 'Active' for row in r.data['results'])
+
+    def test_search_by_period(self, admin_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Initiated')
+
+        r = admin_client.get(f'{ADMIN}/sessions/?search=Spring')
+        assert r.status_code == 200
+        assert all(row['period'] == 'Spring' for row in r.data['results'])
+
+    def test_ordering_by_year_descending(self, admin_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2023, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2026, status='Initiated')
+
+        r = admin_client.get(f'{ADMIN}/sessions/?ordering=-year')
+        assert r.status_code == 200
+        years = [row['year'] for row in r.data['results']]
+        assert years == sorted(years, reverse=True)
 
 
 # ===========================================================================
@@ -1083,6 +1172,7 @@ class TestChangeRequestEndpoints:
 class TestChangeRequestTokenView:
 
     def test_valid_pending_token_confirms_request(self, anon_client, change_request):
+        from Models.models import Notification
         token = change_request.confirmation_token
         r = anon_client.get(
             reverse('Admin:confirm-change-request', kwargs={'token': token})
@@ -1090,6 +1180,9 @@ class TestChangeRequestTokenView:
         assert r.status_code == 200
         change_request.refresh_from_db()
         assert change_request.status == 'confirmed'
+        assert Notification.objects.filter(
+            recipient=change_request.requested_by, verb='change_request_confirmed'
+        ).exists()
 
     def test_expired_token_returns_400(self, anon_client, change_request):
         # backdate requested_at to force expiry

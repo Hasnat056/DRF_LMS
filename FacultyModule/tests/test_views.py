@@ -290,6 +290,57 @@ class TestAssessmentAPI:
         )
         assert AssessmentChecked.objects.filter(assessment=assessment).count() == 1
 
+    def test_open_submission_assessment_notifies_enrolled_students(
+        self, faculty_client, faculty_instance, course_allocation, enrollment
+    ):
+        from Models.models import Notification
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        enrollment.allocation = course_allocation
+        enrollment.status = 'Active'
+        enrollment.save()
+
+        deadline = timezone.now() + timedelta(days=7)
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
+        response = faculty_client.post(url, {
+            'assessment_type': 'Assignment',
+            'assessment_name': 'Assignment 1',
+            'assessment_date': date.today().isoformat(),
+            'weightage': 10,
+            'total_marks': 20,
+            'student_submission': True,
+            'submission_deadline': deadline.isoformat(),
+        }, format='json')
+        assert response.status_code == 201
+
+        assert Notification.objects.filter(
+            recipient=enrollment.student.student_id.user, verb='assessment_open'
+        ).exists()
+
+    def test_closed_submission_assessment_creates_no_notifications(
+        self, faculty_client, faculty_instance, course_allocation, enrollment
+    ):
+        from Models.models import Notification
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        enrollment.allocation = course_allocation
+        enrollment.status = 'Active'
+        enrollment.save()
+
+        url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
+        response = faculty_client.post(url, {
+            'assessment_type': 'Quiz',
+            'assessment_name': 'Quiz 1',
+            'assessment_date': date.today().isoformat(),
+            'weightage': 10,
+            'total_marks': 20,
+            'student_submission': False,
+        }, format='json')
+        assert response.status_code == 201
+        assert not Notification.objects.filter(verb='assessment_open').exists()
+
     def test_admin_can_only_read_assessments(self, admin_client, course_allocation):
         """Admin has read-only access to assessments."""
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
@@ -400,6 +451,11 @@ class TestResultCalculationRequest:
         })
         response = faculty_client.get(url)
         assert response.status_code == 200
+
+        from Models.models import Notification
+        assert Notification.objects.filter(
+            recipient=admin_instance.employee_id.user, verb='result_calculation_requested'
+        ).exists()
 
     def test_duplicate_pending_request_blocked(
         self, faculty_client, faculty_instance, course_allocation, db

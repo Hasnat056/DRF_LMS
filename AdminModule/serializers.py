@@ -245,6 +245,7 @@ class FacultySerializer(PersonSerializerMixin, serializers.ModelSerializer):
 class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
     enrollment_set = serializers.SerializerMethodField()
     person = PersonSerializer(source='student_id')
+    student_class_display = serializers.StringRelatedField(source='student_class', read_only=True)
     url = serializers.HyperlinkedIdentityField(
         view_name='Admin:student-detail',
         lookup_field='student_id'
@@ -256,6 +257,7 @@ class StudentSerializer(PersonSerializerMixin, serializers.ModelSerializer):
             'person',
             'program',
             'student_class',
+            'student_class_display',
             'admission_date',
             'status',
             'enrollment_set',
@@ -420,6 +422,16 @@ class DepartmentSerializer(serializers.ModelSerializer):
         )
         from .tasks import send_hod_request_mail
         send_hod_request_mail.apply_async(args=[request.pk, confirmation_link], eta=(timezone.now() + timedelta(minutes=2)))
+
+        if faculty.employee_id.user_id:
+            Notification.objects.create(
+                recipient=faculty.employee_id.user,
+                verb='hod_nomination',
+                message=f'You have been nominated as Head of Department for {instance.department_name}.',
+                level='action_required',
+                content_type=ContentType.objects.get_for_model(ChangeRequest),
+                object_id=request.pk,
+            )
 
         return instance
 
@@ -965,6 +977,14 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
             instance.status = 'declined'
             instance.applied_at = timezone.now()
             instance.save()
+            Notification.objects.create(
+                recipient=instance.requested_by,
+                verb='change_request_declined',
+                message=f'Your {instance.get_change_type_display()} request has been declined.',
+                level='info',
+                content_type=ContentType.objects.get_for_model(ChangeRequest),
+                object_id=instance.pk,
+            )
             return instance
 
         if validated_data['status'] == 'applied':
@@ -1000,7 +1020,27 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
                     instance.applied_at = timezone.now()
                     instance.save()
                     from .tasks import send_hod_change_mail
-                    send_hod_change_mail.apply_async(args=[instance.pk, old_hod], eta=timezone.now()+timedelta(minutes=2))
+                    send_hod_change_mail.apply_async(args=[instance.pk, old_hod.pk if old_hod else None], eta=timezone.now()+timedelta(minutes=2))
+
+                    hod_change_content_type = ContentType.objects.get_for_model(ChangeRequest)
+                    if instance.new_hod.employee_id.user_id:
+                        Notification.objects.create(
+                            recipient=instance.new_hod.employee_id.user,
+                            verb='hod_change_applied',
+                            message=f'You are now the Head of Department for {department.department_name}.',
+                            level='info',
+                            content_type=hod_change_content_type,
+                            object_id=instance.pk,
+                        )
+                    if old_hod is not None and old_hod.employee_id.user_id:
+                        Notification.objects.create(
+                            recipient=old_hod.employee_id.user,
+                            verb='hod_change_applied',
+                            message=f'Your role as Head of Department for {department.department_name} has ended.',
+                            level='info',
+                            content_type=hod_change_content_type,
+                            object_id=instance.pk,
+                        )
         return instance
 
 
@@ -1096,7 +1136,7 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         #parsing student_data if present
         if 'program' in row:
             parsed_row['program'] = row['program']
-        if 'class_' in row:
+        if 'student_class' in row:
             parsed_row['student_class'] = row['student_class']
         if 'admission_date' in row and row['admission_date'] != '':
             parsed_row['admission_date'] = row['admission_date']

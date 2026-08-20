@@ -3,6 +3,8 @@ from datetime import timedelta
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from django.db.models import CheckConstraint, Q
 
@@ -579,3 +581,30 @@ class ChangeRequest(models.Model):
 
     class Meta:
         db_table = 'change_request'
+
+
+class Notification(models.Model):
+    LEVEL_CHOICES = [
+        ('info', 'Info'),
+        ('action_required', 'Action Required'),
+    ]
+
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications', db_index=True)
+    verb = models.CharField(max_length=50)
+    message = models.CharField(max_length=255)
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='info')
+
+    # Points at the object the notification is about (a ChangeRequest, an Assessment, ...)
+    content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    target = GenericForeignKey('content_type', 'object_id')
+
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'notification'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.verb} -> {self.recipient}'

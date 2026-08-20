@@ -251,6 +251,21 @@ class AssessmentSerializer(serializers.ModelSerializer):
         for enrollment in enrollment_set:
             AssessmentChecked.objects.create(enrollment=enrollment, assessment=assessment)
 
+        if assessment.student_submission and assessment.submission_deadline:
+            assessment_content_type = ContentType.objects.get_for_model(Assessment)
+            Notification.objects.bulk_create([
+                Notification(
+                    recipient=enrollment.student.student_id.user,
+                    verb='assessment_open',
+                    message=f'{assessment.assessment_name} is open, due {assessment.submission_deadline:%Y-%m-%d %H:%M}.',
+                    level='action_required',
+                    content_type=assessment_content_type,
+                    object_id=assessment.pk,
+                )
+                for enrollment in enrollment_set
+                if enrollment.student.student_id.user_id
+            ])
+
         return assessment
 
     def update(self, instance, validated_data):

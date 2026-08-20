@@ -644,6 +644,10 @@ class SessionListCreateAPIView(
 ):
     queryset = AcademicSession.objects.all()
     serializer_class = SessionSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['period', 'year', 'status']
+    search_fields = ['period', 'status']
+    ordering_fields = ['year', 'period', 'status', 'activation_deadline', 'closing_deadline']
 
     def perform_create(self, serializer):
         serializer.save()
@@ -966,6 +970,14 @@ class ChangeRequestView(APIView):
         if change_request.change_type == 'result_calculation':
             send_result_calculation_confirmation_mail.apply_async(args=[change_request.pk],eta=timezone.now()+timedelta(minutes=2))
 
+        Notification.objects.create(
+            recipient=change_request.requested_by,
+            verb='change_request_confirmed',
+            message=f'Your {change_request.get_change_type_display()} request has been confirmed.',
+            level='info',
+            content_type=ContentType.objects.get_for_model(ChangeRequest),
+            object_id=change_request.pk,
+        )
 
         return Response({"message": "Change request confirmed successfully!"},status=status.HTTP_200_OK)
 

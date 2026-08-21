@@ -369,6 +369,16 @@ class ResultCalculationRequest(
 
             send_result_calculation_mail.apply_async(args=[change_request.pk, confirmation_link, admin.employee_id.institutional_email], eta=timezone.now()+timedelta(minutes=2))
 
+            if admin.employee_id.user_id:
+                Notification.objects.create(
+                    recipient=admin.employee_id.user,
+                    verb='result_calculation_requested',
+                    message=f'Result calculation requested for allocation {allocation.allocation_id}.',
+                    level='action_required',
+                    content_type=ContentType.objects.get_for_model(ChangeRequest),
+                    object_id=change_request.pk,
+                )
+
             return Response(data={'message': 'The request has been successfully sent to the admin'})
         return Response(data={'message': 'A valid user not provided'}, status=status.HTTP_403_FORBIDDEN)
 

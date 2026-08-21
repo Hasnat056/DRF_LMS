@@ -262,7 +262,8 @@ def cache_student_data_task(user_id):
     context = {'request': custom_request}
 
     queryset = Student.objects.select_related(
-        'student_id', 'student_id__user', 'student_id__address', 'program'
+        'student_id', 'student_id__user', 'student_id__address', 'program',
+        'student_class', 'student_class__program',
     ).prefetch_related('student_id__qualification_set')
     cache_key = 'admin:student_list'
     cache.delete(cache_key)
@@ -510,8 +511,9 @@ def send_hod_request_mail(request_id, confirmation_link):
     return 'Email sent successfully'
 
 @shared_task
-def send_hod_change_mail(request_id, old_hod):
+def send_hod_change_mail(request_id, old_hod_id):
     request = get_object_or_404(ChangeRequest, pk=request_id)
+    old_hod = Faculty.objects.filter(pk=old_hod_id).first() if old_hod_id else None
 
     send_mail(
         subject=f"HOD Appointment : {request.new_hod}",

@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'AdminModule',
     'FacultyModule',
     'StudentModule',
+    'NotificationModule',
 
 ]
 

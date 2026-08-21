@@ -146,6 +146,7 @@ urlpatterns = [
         path('api/admin/', include('AdminModule.urls', namespace='Admin')),
         path('api/faculty/', include('FacultyModule.urls')),
         path('api/student/', include('StudentModule.urls')),
+        path('api/notifications/', include('NotificationModule.urls')),
 
         # API Documentation
         path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

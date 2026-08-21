@@ -611,6 +611,38 @@ class TestFacultyAllocationCacheBranches:
         r = faculty_client.get(f'{FACULTY}/allocations/?status=Completed')
         assert r.status_code == 200
 
+    def test_cold_and_warm_cache_return_same_envelope_shape(
+        self, faculty_client, faculty_instance, course_allocation
+    ):
+        """Cold cache (paginated response) and warm cache (cached response) must
+        return the same paginated envelope shape, not a bare array on cache hit."""
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+
+        cold = faculty_client.get(f'{FACULTY}/allocations/')
+        assert cold.status_code == 200
+        assert set(cold.data.keys()) >= {'count', 'next', 'previous', 'results'}
+
+        warm = faculty_client.get(f'{FACULTY}/allocations/')
+        assert warm.status_code == 200
+        assert set(warm.data.keys()) >= {'count', 'next', 'previous', 'results'}
+        assert warm.data['results'] == cold.data['results']
+
+    def test_filtered_warm_cache_response_keeps_envelope(
+        self, faculty_client, faculty_instance, course_allocation
+    ):
+        course_allocation.faculty = faculty_instance
+        course_allocation.status = 'Ongoing'
+        course_allocation.save()
+        faculty_client.get(f'{FACULTY}/allocations/')  # prime cache (paginated envelope)
+
+        r = faculty_client.get(f'{FACULTY}/allocations/?status=Completed')
+        assert r.status_code == 200
+        assert set(r.data.keys()) >= {'count', 'next', 'previous', 'results'}
+        assert r.data['results'] == []
+        assert r.data['count'] == 0
+
     def test_allocation_detail_returns_200_for_owner(
         self, faculty_client, faculty_instance, course_allocation
     ):

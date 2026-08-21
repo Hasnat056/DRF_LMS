@@ -171,8 +171,9 @@ class FacultyCourseAllocationView(
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True, context={'request': request})
-                cache.set(cache_key, serializer.data, timeout=60*5)
-                return self.get_paginated_response(serializer.data)
+                response = self.get_paginated_response(serializer.data)
+                cache.set(cache_key, response.data, timeout=60*5)
+                return response
 
             serializer = self.get_serializer(queryset, many=True, context={'request': request})
             cache.set(cache_key, serializer.data, timeout=60*5)
@@ -180,15 +181,22 @@ class FacultyCourseAllocationView(
 
         else:
             query_params = self.request.query_params
-            if query_params is None:
+            if not query_params:
                 return Response(data=data, status=status.HTTP_200_OK)
+
+            is_paginated = isinstance(data, dict) and 'results' in data
+            results = data['results'] if is_paginated else data
             for each in query_params:
                 if each in self.filterset_fields:
                     value = self.request.query_params.get(each)
-                    filtered_data = [datarow for datarow in data if str(datarow.get(each)) == value]
-                    data = filtered_data
+                    results = [datarow for datarow in results if str(datarow.get(each)) == value]
 
-            return Response(data=data, status=status.HTTP_200_OK)
+            if is_paginated:
+                filtered = dict(data)
+                filtered['results'] = results
+                filtered['count'] = len(results)
+                return Response(data=filtered, status=status.HTTP_200_OK)
+            return Response(data=results, status=status.HTTP_200_OK)
 
 
 

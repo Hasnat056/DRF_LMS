@@ -775,6 +775,56 @@ class TestSessionListCreate:
         assert years == sorted(years, reverse=True)
 
 
+@pytest.mark.django_db
+class TestCurrentSessionView:
+    """Public — no auth, consumed by the login page before a JWT exists."""
+
+    def test_anon_can_access(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+
+    def test_excludes_inactive_and_completed(self, anon_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Inactive')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Completed')
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert r.data == []
+
+    def test_includes_initiated_available_active(self, anon_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Available')
+        AcademicSession.objects.create(period='Summer', year=2025, status='Active')
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        statuses = {row['status'] for row in r.data}
+        assert statuses == {'Initiated', 'Available', 'Active'}
+
+    def test_orders_active_first_then_available_then_initiated(self, anon_client):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Initiated')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Active')
+        AcademicSession.objects.create(period='Summer', year=2025, status='Available')
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert [row['status'] for row in r.data] == ['Active', 'Available', 'Initiated']
+
+    def test_response_is_not_paginated(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert isinstance(r.data, list)
+
+    def test_fields_present(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        entry = r.data[0]
+        assert set(entry.keys()) == {'id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline'}
+
+
 # ===========================================================================
 # Semester Endpoints
 # ===========================================================================

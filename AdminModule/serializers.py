@@ -1159,6 +1159,15 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         return parsed_row
 
 
+class CurrentSessionSerializer(serializers.ModelSerializer):
+    availability_deadline = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = AcademicSession
+        fields = ['id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline']
+        read_only_fields = fields
+
+
 class SessionSerializer(serializers.ModelSerializer):
     url = serializers.HyperlinkedIdentityField(
         view_name='Admin:session-detail',

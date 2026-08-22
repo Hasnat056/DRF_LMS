@@ -113,7 +113,7 @@ class CompilerSerializer(serializers.Serializer):
                     'input_file_path': input_file,
                     'timeout': 15
                 }
-                response = requests.post(url, data=data)
+                response = requests.post(url, json=data)
 
             elif extension == 'cpp' or extension == 'c':
                 url = 'http://c-compiler:8000/run'
@@ -179,7 +179,7 @@ class CompilerSerializer(serializers.Serializer):
                     'input_file_path': input_file,
                     'timeout': 15
                 }
-                response = requests.post(url, data=data)
+                response = requests.post(url, json=data)
 
             elif file_extension == 'cpp' or file_extension == 'c':
                 url = 'http://c-compiler:8000/run'
@@ -232,7 +232,7 @@ class CompilerSerializer(serializers.Serializer):
                     'input_file_path': input_file,
                     'timeout': 15
                 }
-                response = requests.post(url, data=data)
+                response = requests.post(url, json=data)
 
             elif file_extension == 'cpp' or file_extension == 'c':
                 url = 'http://c-compiler:8000/run'

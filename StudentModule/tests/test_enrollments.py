@@ -126,3 +126,43 @@ class TestEnrollmentRetrieve:
         assert r.status_code == 200
         details = r.data.get('allocation_details', {})
         assert 'course_details' in details or details == {}
+
+
+@pytest.mark.django_db
+class TestEnrollmentResult:
+    """result is only surfaced once the enrollment is Completed, gating
+    in-progress marks/GPA from students until faculty finalize them."""
+
+    def test_result_is_null_for_active_enrollment(self, student_client, active_enrollment):
+        url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
+        r = student_client.get(url)
+        assert r.status_code == 200
+        assert r.data['result'] is None
+
+    def test_result_blank_when_completed_but_not_yet_calculated(
+        self, student_client, active_enrollment
+    ):
+        """enrollment fixture already creates a blank Result row (mirrors
+        AdminModule's enrollment-creation flow) — gating only hides it
+        pre-Completed, it doesn't require marks to already be filled in."""
+        active_enrollment.status = 'Completed'
+        active_enrollment.save()
+        url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
+        r = student_client.get(url)
+        assert r.status_code == 200
+        assert r.data['result'] == {'course_gpa': None, 'obtained_marks': None}
+
+    def test_result_visible_once_completed_and_calculated(
+        self, student_client, active_enrollment
+    ):
+        from Models.models import Result
+        from decimal import Decimal
+        active_enrollment.status = 'Completed'
+        active_enrollment.save()
+        Result.objects.filter(enrollment=active_enrollment).update(
+            course_gpa=Decimal('3.50'), obtained_marks=Decimal('88.00')
+        )
+        url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
+        r = student_client.get(url)
+        assert r.status_code == 200
+        assert r.data['result'] == {'course_gpa': Decimal('3.50'), 'obtained_marks': Decimal('88.00')}

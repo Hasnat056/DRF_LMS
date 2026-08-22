@@ -246,6 +246,7 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         view_name='Student:enrollment-detail',
         lookup_field='enrollment_id',
     )
+    result = serializers.SerializerMethodField(read_only=True)
     class Meta:
         model = Enrollment
         fields = [
@@ -254,7 +255,40 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
             'student',
             'allocation',
             'status',
-            'allocation_details'
+            'allocation_details',
+            'result',
+        ]
+
+    @extend_schema_field(
+        inline_serializer(
+            name='EnrollmentResult',
+            fields={
+                'course_gpa': serializers.DecimalField(max_digits=4, decimal_places=2, allow_null=True),
+                'obtained_marks': serializers.DecimalField(max_digits=6, decimal_places=2, allow_null=True),
+            }
+        )
+    )
+    def get_result(self, obj):
+        if obj.status != 'Completed':
+            return None
+        try:
+            result = obj.result
+        except Result.DoesNotExist:
+            return None
+        return {
+            'course_gpa': result.course_gpa,
+            'obtained_marks': result.obtained_marks,
+        }
+
+
+class StudentTranscriptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transcript
+        fields = [
+            'id',
+            'semester',
+            'total_credits',
+            'semester_gpa',
         ]
 
 

@@ -136,7 +136,7 @@ class StudentEnrollmentsListView(
         return Enrollment.objects.filter(
             student__student_id__user=self.request.user,
             allocation__semester__status__in=['Active', 'Completed']
-        )
+        ).select_related('result')
 
 
 class StudentEnrollmentRetrieveView(
@@ -146,7 +146,23 @@ class StudentEnrollmentRetrieveView(
     serializer_class = StudentEnrollmentSerializer
     lookup_field = 'enrollment_id'
     def get_queryset(self):
-        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+        return Enrollment.objects.filter(
+            student__student_id__user=self.request.user
+        ).select_related('result')
+
+
+class StudentTranscriptListView(
+    StudentTranscriptPermissionMixin,
+    generics.ListAPIView
+):
+    serializer_class = StudentTranscriptSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['semester']
+
+    def get_queryset(self):
+        return Transcript.objects.filter(
+            student__student_id__user=self.request.user
+        ).order_by('semester')
 
 
 

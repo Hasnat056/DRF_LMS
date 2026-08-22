@@ -12,6 +12,9 @@ class ReviewsPermissionMixin:
 class StudentEnrollmentPermissionMixin:
     permission_classes = [IsAuthenticated, StudentEnrollmentPermission]
 
+class StudentTranscriptPermissionMixin:
+    permission_classes = [IsAuthenticated, StudentTranscriptPermission]
+
 class StudentAssessmentUploadPermissionMixin:
     permission_classes = [IsAuthenticated, StudentAssessmentUploadPermission]
 

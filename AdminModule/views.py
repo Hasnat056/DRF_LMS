@@ -1,5 +1,5 @@
 import logging
-from django.db.models import Count, Case, When
+from django.db.models import Count
 from django.db.models.functions import ExtractYear
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
@@ -666,22 +666,22 @@ class SessionRetrieveUpdateAPIView(
         serializer.save()
 
 
-class CurrentSessionView(generics.ListAPIView):
+class CurrentSessionView(APIView):
     """Unauthenticated — the login page and every role's UI need to know the
-    live session phase (Initiated/Available/Active) before a JWT exists."""
+    live session phase (Initiated/Available/Active) before a JWT exists.
+
+    At most one session is live at a time (guarded in
+    SessionSerializer.update), so this returns a single object — or null when
+    nothing is live, which is a normal state rather than an error."""
     serializer_class = CurrentSessionSerializer
     permission_classes = [AllowAny]
-    pagination_class = None
 
-    def get_queryset(self):
-        order = Case(
-            When(status='Active', then=0),
-            When(status='Available', then=1),
-            When(status='Initiated', then=2),
-        )
-        return AcademicSession.objects.filter(
-            status__in=['Active', 'Available', 'Initiated']
-        ).annotate(_order=order).order_by('_order')
+    def get(self, request, *args, **kwargs):
+        session = AcademicSession.objects.filter(
+            status__in=['Initiated', 'Available', 'Active']
+        ).first()
+        data = self.serializer_class(session).data if session else None
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class SemesterListAPIView(

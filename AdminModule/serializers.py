@@ -1238,7 +1238,7 @@ class SessionSerializer(serializers.ModelSerializer):
                 )
                 raise serializers.ValidationError(
                     f'Session {clash} is currently {clash.status}. Only one session can be '
-                    f'live at a time — complete it before initiating another.'
+                    f'live at a time, complete it before initiating another.'
                 )
 
             for attr, value in validated_data.items():

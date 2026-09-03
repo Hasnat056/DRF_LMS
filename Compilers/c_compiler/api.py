@@ -2,14 +2,14 @@ import os
 import subprocess
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 
 app = FastAPI(title="C/C++ Compiler API")
 
 class CodeExecutionRequest(BaseModel):
     folder_path: str
     language: Literal["c", "cpp"]
-    input_file_path: str = None
+    input_file_path: Optional[str] = None
     timeout: int = 10
 
 @app.post("/run")

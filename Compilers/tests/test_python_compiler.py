@@ -54,6 +54,22 @@ class TestPythonCompilerAPI:
         assert r.status_code == 200
         assert r.json()['stdout'] == 'result\n'
 
+    @patch('Compilers.python_compiler.api.subprocess.run')
+    @patch('Compilers.python_compiler.api.os.path.exists', return_value=True)
+    def test_run_with_explicit_null_input_file_path(self, mock_exists, mock_run):
+        """The Django backend always sends input_file_path as a key, using
+        None when stdin is blank. Explicit null must not fail schema validation."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=['python3', '/code/test/main.py'],
+            returncode=0, stdout='hello\n', stderr='',
+        )
+        r = client.post('/run', json={
+            'file_path': '/code/test/main.py',
+            'input_file_path': None,
+        })
+        assert r.status_code == 200
+        assert r.json()['stdout'] == 'hello\n'
+
     @patch('Compilers.python_compiler.api.os.path.exists')
     def test_input_file_not_exists_returns_400(self, mock_exists):
         # file_path exists but input_file_path does not

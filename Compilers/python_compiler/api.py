@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 import subprocess
 import os
 
@@ -7,7 +8,7 @@ app = FastAPI(title="Python Compiler API")
 
 class CodeExecutionRequest(BaseModel):
     file_path: str           # full path inside container: /code/<uuid>/main.py
-    input_file_path: str = None
+    input_file_path: Optional[str] = None
     timeout: int = 10
 
 @app.post("/run")

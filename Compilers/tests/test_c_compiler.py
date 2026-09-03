@@ -136,6 +136,24 @@ class TestCCompilerAPI:
     @patch('Compilers.c_compiler.api.subprocess.run')
     @patch('Compilers.c_compiler.api.os.path.isdir', return_value=True)
     @patch('Compilers.c_compiler.api.os.path.exists', return_value=True)
+    def test_run_with_explicit_null_input_file_path(self, mock_exists, mock_isdir, mock_run):
+        """The Django backend always sends input_file_path as a key, using
+        None when stdin is blank. Explicit null must not fail schema validation."""
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr=''),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout='hi\n', stderr=''),
+        ]
+        r = client.post('/run', json={
+            'folder_path': '/code/test',
+            'language': 'c',
+            'input_file_path': None,
+        })
+        assert r.status_code == 200
+        assert r.json()['stdout'] == 'hi\n'
+
+    @patch('Compilers.c_compiler.api.subprocess.run')
+    @patch('Compilers.c_compiler.api.os.path.isdir', return_value=True)
+    @patch('Compilers.c_compiler.api.os.path.exists', return_value=True)
     def test_run_timeout(self, mock_exists, mock_isdir, mock_run):
         # Compilation succeeds, execution times out
         mock_run.side_effect = [

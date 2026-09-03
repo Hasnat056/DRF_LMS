@@ -93,6 +93,10 @@ class TestCompilerSerializerCreate:
         mock_post.assert_called_once()
         url = mock_post.call_args[0][0]
         assert 'python-compiler' in url
+        # Python compiler service parses the body as JSON (Pydantic model) —
+        # sending form-encoded data= fails schema validation.
+        assert 'json' in mock_post.call_args[1]
+        assert 'data' not in mock_post.call_args[1]
 
     @patch('Compilers.serializers.shutil.rmtree')
     @patch('Compilers.serializers.requests.post')
@@ -327,7 +331,7 @@ class TestCompilerSerializerHandleZip:
         assert isinstance(result, Response)
         # Should use the nested 'project' folder as extracted_folder
         call_data = mock_post.call_args
-        file_path = call_data[1].get('data', {}).get('file_path', '')
+        file_path = call_data[1].get('json', {}).get('file_path', '')
         assert 'project' in file_path
 
 

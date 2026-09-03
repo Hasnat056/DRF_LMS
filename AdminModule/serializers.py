@@ -1159,6 +1159,15 @@ class FacultyStudentBulkSerializer(serializers.Serializer):
         return parsed_row
 
 
+class CurrentSessionSerializer(serializers.ModelSerializer):
+    availability_deadline = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = AcademicSession
+        fields = ['id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline']
+        read_only_fields = fields
+
+
 class SessionSerializer(serializers.ModelSerializer):
     url = serializers.HyperlinkedIdentityField(
         view_name='Admin:session-detail',
@@ -1212,6 +1221,26 @@ class SessionSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if 'activation_deadline' in validated_data:
+            # Only one session may be live (Initiated -> Available -> Active)
+            # at a time. Nothing enforces this at the DB level — this model's
+            # only constraint is unique(period, year) — so it is guarded here,
+            # at the single point where a session becomes live.
+            clash = (
+                AcademicSession.objects
+                .filter(status__in=['Initiated', 'Available', 'Active'])
+                .exclude(pk=instance.pk)
+                .first()
+            )
+            if clash:
+                logger.warning(
+                    'Rejected activation_deadline for session_id=%s: session_id=%s is already %s',
+                    instance.id, clash.id, clash.status
+                )
+                raise serializers.ValidationError(
+                    f'Session {clash} is currently {clash.status}. Only one session can be '
+                    f'live at a time, complete it before initiating another.'
+                )
+
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             instance.status = 'Initiated'

@@ -775,6 +775,101 @@ class TestSessionListCreate:
         assert years == sorted(years, reverse=True)
 
 
+@pytest.mark.django_db
+class TestCurrentSessionView:
+    """Public — no auth, consumed by the login page before a JWT exists."""
+
+    def test_anon_can_access(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+
+    def test_returns_null_when_nothing_is_live(self, anon_client):
+        """No live session is a normal state, not an error — 200 with null."""
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2024, status='Inactive')
+        AcademicSession.objects.create(period='Spring', year=2025, status='Completed')
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert r.data is None
+
+    @pytest.mark.parametrize('live_status', ['Initiated', 'Available', 'Active'])
+    def test_returns_the_live_session(self, anon_client, live_status):
+        from Models.models import AcademicSession
+        live = AcademicSession.objects.create(period='Fall', year=2026, status=live_status)
+        AcademicSession.objects.create(period='Spring', year=2025, status='Completed')
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert r.data['id'] == live.id
+        assert r.data['status'] == live_status
+
+    def test_response_is_a_single_object_not_a_list(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert isinstance(r.data, dict)
+
+    def test_fields_present(self, anon_client, academic_session):
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert set(r.data.keys()) == {'id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline'}
+
+
+@pytest.mark.django_db
+class TestSessionOneLiveGuard:
+    """Only one AcademicSession may be live (Initiated/Available/Active) at a
+    time. Nothing enforces this at the DB level, so SessionSerializer.update()
+    guards the single point where a session becomes live."""
+
+    def _set_deadline(self, admin_client, session, when):
+        with patch('AdminModule.tasks.session_activation_task.apply_async') as act, \
+             patch('AdminModule.tasks.session_availability_task.apply_async') as avail:
+            act.return_value.id = 'fake-activation-id'
+            avail.return_value.id = 'fake-availability-id'
+            return admin_client.patch(
+                reverse('Admin:session-detail', kwargs={'id': session.id}),
+                {'activation_deadline': when.isoformat()}, format='json',
+            )
+
+    @pytest.mark.parametrize('live_status', ['Initiated', 'Available', 'Active'])
+    def test_blocked_when_another_session_is_live(self, admin_client, live_status):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2026, status=live_status)
+        target = AcademicSession.objects.create(period='Spring', year=2027, status='Inactive')
+
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+
+        assert r.status_code == 400
+        target.refresh_from_db()
+        assert target.status == 'Inactive'
+        assert target.activation_deadline is None
+
+    def test_rescheduling_the_same_live_session_is_allowed(self, admin_client):
+        """Excluding self matters — an admin must be able to move the deadline
+        of the session that is already live."""
+        from Models.models import AcademicSession
+        target = AcademicSession.objects.create(
+            period='Fall', year=2026, status='Initiated',
+            activation_deadline=timezone.now() + timedelta(days=7),
+        )
+
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+
+        assert r.status_code == 200
+
+    @pytest.mark.parametrize('dormant_status', ['Inactive', 'Completed'])
+    def test_allowed_when_other_sessions_are_dormant(self, admin_client, dormant_status):
+        from Models.models import AcademicSession
+        AcademicSession.objects.create(period='Fall', year=2025, status=dormant_status)
+        target = AcademicSession.objects.create(period='Spring', year=2027, status='Inactive')
+
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+
+        assert r.status_code == 200
+        target.refresh_from_db()
+        assert target.status == 'Initiated'
+
+
 # ===========================================================================
 # Semester Endpoints
 # ===========================================================================

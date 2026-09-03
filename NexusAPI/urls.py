@@ -48,6 +48,8 @@ from drf_spectacular.views import (
 
 from django.views.generic import TemplateView
 
+from AdminModule.views import CurrentSessionView
+
 
 @staff_member_required
 def seed_demo_data_view(request):
@@ -139,6 +141,8 @@ urlpatterns = [
         # JWT Authentication
         path('api/token/', LoginView.as_view(), name='token_obtain_pair'),
         path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+        # Public — current live session phase, needed pre-login
+        path('api/sessions/current/', CurrentSessionView.as_view(), name='session-current'),
         # Accounts Login
         path('accounts/', include('django.contrib.auth.urls')),
 

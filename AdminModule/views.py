@@ -7,6 +7,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 import django_filters
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny
 
 
 from .tasks import cache_faculty_data_task, cache_student_data_task, cache_programs_data_task, cache_courses_data_task, \
@@ -663,6 +664,24 @@ class SessionRetrieveUpdateAPIView(
 
     def perform_update(self, serializer):
         serializer.save()
+
+
+class CurrentSessionView(APIView):
+    """Unauthenticated — the login page and every role's UI need to know the
+    live session phase (Initiated/Available/Active) before a JWT exists.
+
+    At most one session is live at a time (guarded in
+    SessionSerializer.update), so this returns a single object — or null when
+    nothing is live, which is a normal state rather than an error."""
+    serializer_class = CurrentSessionSerializer
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        session = AcademicSession.objects.filter(
+            status__in=['Initiated', 'Available', 'Active']
+        ).first()
+        data = self.serializer_class(session).data if session else None
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class SemesterListAPIView(

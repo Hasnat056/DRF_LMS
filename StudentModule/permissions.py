@@ -46,6 +46,17 @@ class StudentEnrollmentPermission(permissions.BasePermission):
             return request.user == obj.student.student_id.user
 
 
+class StudentTranscriptPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.user.is_authenticated:
+            if request.user.groups.filter(name='Student').exists():
+                return request.method in permissions.SAFE_METHODS
+            return False
+        return False
+    def has_object_permission(self, request, view, obj):
+        return request.user == obj.student.student_id.user
+
+
 class StudentAssessmentUploadPermission(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.user.is_authenticated:

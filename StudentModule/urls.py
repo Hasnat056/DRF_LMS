@@ -13,6 +13,8 @@ urlpatterns = [
     path ('attendance/', StudentAttendanceListAPIView.as_view(), name='student-attendance'),
     path ('attendance/<int:enrollment_id>/', StudentAttendanceRetrieveAPIView.as_view(), name='attendance-detail'),
 
+    path ('transcripts/', StudentTranscriptListView.as_view(), name='student-transcripts'),
+
     path('<str:student_id>/enrollments/reviews/', ReviewListAPIView.as_view()),
     path('<str:student_id>/enrollments/<int:enrollment_id>/reviews/', ReviewCreateAPIView.as_view()),
     path('<str:student_id>/enrollments/<int:enrollment_id>/reviews/<int:review_id>/', ReviewRetrieveUpdateDestroyAPIView.as_view(), name='review-detail'),

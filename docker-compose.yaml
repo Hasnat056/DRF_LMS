@@ -181,7 +181,7 @@ services:
       - mysql_test_data:/var/lib/mysql
       # Grants the app user server-wide rights so the Django test runner can
       # create and drop its own `test_*` database.
-      - ./benchmarks/mysql-test-init.sql:/docker-entrypoint-initdb.d/10-grants.sql:ro
+      - ./tests/benchmarks/mysql-test-init.sql:/docker-entrypoint-initdb.d/10-grants.sql:ro
     networks:
       - nexus_network
     healthcheck:

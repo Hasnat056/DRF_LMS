@@ -10,7 +10,7 @@ with marks being entered.
 Everything goes in through `bulk_create`, the RNG is seeded, and the whole
 thing is idempotent — `seed()` returns immediately if the marker session is
 already present. Run it once into the reused test database (see
-`benchmarks/conftest.py`) and every subsequent benchmark run starts warm.
+`tests/benchmarks/conftest.py`) and every subsequent benchmark run starts warm.
 
 Dial `SCALE` down while iterating on the harness; leave it at 1.0 for numbers
 worth reporting.

@@ -4,7 +4,7 @@ Endpoint performance audit — query counts and latency, cold and warm.
 Excluded from normal runs by `-m "not benchmark"` in pytest.ini. To run:
 
     docker compose --profile test up -d database-test redis-test
-    docker compose exec backend pytest benchmarks/ -m benchmark -q -s
+    docker compose exec backend pytest tests/benchmarks/ -m benchmark -q -s
 
 Method, per endpoint:
 

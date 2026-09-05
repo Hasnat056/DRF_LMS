@@ -15,7 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from Models.models import (
     AcademicSession, CourseAllocation, Enrollment, Semester, Student,
 )
-from benchmarks import seed_stress
+from tests.benchmarks import seed_stress
 
 
 @pytest.fixture(scope='session')
@@ -29,7 +29,7 @@ def django_db_modify_db_settings(django_db_modify_db_settings):
     `test_LMS` took the suite from 774 passing to 370 errors.
 
     pytest-django applies this fixture before creating the database, and it is
-    only requested by tests collected under `benchmarks/` — a normal run
+    only requested by tests collected under `tests/benchmarks/` — a normal run
     deselects those (`-m "not benchmark"`) and is untouched.
     """
     from django.conf import settings

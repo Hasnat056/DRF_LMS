@@ -7,7 +7,7 @@ counting the repeats. A shape that appears hundreds of times is an N+1 and
 names the relation that needs `select_related`/`prefetch_related`.
 
 Run with:
-    docker compose exec backend pytest benchmarks/test_query_profile.py -m benchmark -q -s
+    docker compose exec backend pytest tests/benchmarks/test_query_profile.py -m benchmark -q -s
 """
 import re
 from collections import Counter

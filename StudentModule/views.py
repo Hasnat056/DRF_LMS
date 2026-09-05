@@ -135,14 +135,22 @@ class StudentEnrollmentsListView(
     filterset_fields = ['status', 'allocation__course__course_code']
 
     def get_queryset(self):
+        # The select_related used to stop at `allocation`, but
+        # StudentCourseAllocationSerializer reads the teacher's person row and
+        # the course (and its prerequisite) for every enrollment on the page —
+        # 3-4 extra queries per row that the join it already does can carry.
         return Enrollment.objects.filter(
             student__student_id__user=self.request.user,
             allocation__semester__status__in=['Active', 'Completed']
-        ).select_related('result', 'allocation').prefetch_related(
+        ).select_related(
+            'result', 'allocation',
+            'allocation__faculty', 'allocation__faculty__employee_id',
+            'allocation__course', 'allocation__course__pre_requisite',
+        ).prefetch_related(
             Prefetch('allocation__assessment_set__assessmentchecked_set',
                      queryset=AssessmentChecked.objects.filter(
                          enrollment__student__student_id__user=self.request.user
-                     ),
+                     ).select_related('enrollment'),
                      ))
 
 
@@ -153,9 +161,27 @@ class StudentEnrollmentRetrieveView(
     serializer_class = StudentEnrollmentSerializer
     lookup_field = 'enrollment_id'
     def get_queryset(self):
+        # Same select_related chain and the same Prefetch as the list view.
+        # StudentCourseAllocationSerializer walks to the teacher's person row
+        # and to the course and its prerequisite, and to_representation reads
+        # the prefetched checked rows instead of querying once per assessment.
+        #
+        # Deliberately NOT the list view's other clause,
+        # allocation__semester__status__in=['Active', 'Completed'] — this view
+        # has no such filter, and adding one would turn an enrollment whose
+        # semester has not activated yet into a 404.
         return Enrollment.objects.filter(
             student__student_id__user=self.request.user
-        ).select_related('result', 'allocation')
+        ).select_related(
+            'result', 'allocation',
+            'allocation__faculty', 'allocation__faculty__employee_id',
+            'allocation__course', 'allocation__course__pre_requisite',
+        ).prefetch_related(
+            Prefetch('allocation__assessment_set__assessmentchecked_set',
+                     queryset=AssessmentChecked.objects.filter(
+                         enrollment__student__student_id__user=self.request.user
+                     ).select_related('enrollment'),
+                     ))
 
 
 class StudentTranscriptListView(
@@ -195,14 +221,37 @@ class StudentAssessmentUploadView(
             raise ValidationError({'student_upload': str(e)})
 
 
+def _attendance_queryset(user):
+    """Enrollments with everything StudentAttendanceSerializer reads.
+
+    Bare, a page of 10 cost 74 queries: 4 relation walks per row (allocation,
+    faculty, person, course) plus 3 more for the attendance rows, which
+    get_attendance_details and get_percentage were each fetching separately.
+
+    `lecture` is carried on the attendance rows because the serializer filters
+    them by lecture.allocation_id in Python -- reading it off an unfetched
+    lecture would just move the N+1 one level down.
+    """
+    return Enrollment.objects.filter(
+        student__student_id__user=user
+    ).select_related(
+        'allocation', 'allocation__faculty', 'allocation__faculty__employee_id',
+        'allocation__course',
+    ).prefetch_related(
+        Prefetch('attendance_set',
+                 queryset=Attendance.objects.select_related('lecture').order_by('id')),
+    )
+
+
 class StudentAttendanceListAPIView(
     StudentAttendancePermissionMixin,
     generics.ListAPIView
 ):
 
     serializer_class = StudentAttendanceSerializer
+
     def get_queryset(self):
-        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+        return _attendance_queryset(self.request.user)
 
 
 
@@ -212,8 +261,9 @@ class StudentAttendanceRetrieveAPIView(
 ):
     serializer_class = StudentAttendanceSerializer
     lookup_field = 'enrollment_id'
+
     def get_queryset(self):
-        return Enrollment.objects.filter(student__student_id__user=self.request.user)
+        return _attendance_queryset(self.request.user)
 
 
 class StudentEnrollmentCreateAPIView(

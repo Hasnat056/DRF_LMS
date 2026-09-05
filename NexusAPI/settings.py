@@ -246,10 +246,50 @@ CACHES = {
 }
 
 
+# Test / benchmark isolation
+# --------------------------
+# Under pytest, point the database and cache at the dedicated containers
+# (`docker compose --profile test up -d database-test redis-test`). Without
+# this the suite shares MySQL and Redis with the running dev stack: the autouse
+# `cache.clear()` fixtures flush whatever the app had cached, and benchmark
+# timings compete with dev queries for the same buffer pool.
+
+RUNNING_TESTS = (
+    'PYTEST_CURRENT_TEST' in os.environ
+    or 'pytest' in os.path.basename(sys.argv[0])
+    # Lets a non-pytest process join the test stack -- the benchmark Celery
+    # worker sets TEST_MODE=true so it reads database-test and redis-test.
+    or config('TEST_MODE', default=False, cast=bool)
+)
+
+if RUNNING_TESTS:
+    DATABASES['default']['HOST'] = config('TEST_DB_HOST', default='database-test')
+    CACHES['default']['LOCATION'] = config(
+        'TEST_REDIS_URL', default='redis://redis-test:6379/0'
+    )
+    CACHES['pages']['LOCATION'] = config(
+        'TEST_REDIS_URL_PAGES', default='redis://redis-test:6379/1'
+    )
+
 
 # Celery Settings
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis-server:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://redis-server:6379/1')
+
+if RUNNING_TESTS:
+    # Keep benchmark jobs off the dev broker: a stray `.delay()` there would be
+    # picked up by the live worker and run against the dev database. Databases
+    # 2 and 3 so the broker does not collide with the test caches on 0 and 1.
+    CELERY_BROKER_URL = config('TEST_CELERY_BROKER_URL', default='redis://redis-test:6379/2')
+    CELERY_RESULT_BACKEND = config('TEST_CELERY_RESULT_BACKEND', default='redis://redis-test:6379/3')
+    # Celery reads CELERY_BROKER_URL from the process environment itself, and
+    # that autoset value beats config_from_object('django.conf:settings').
+    # `.env` puts the dev broker there, so without this the settings above are
+    # silently ignored and benchmark jobs land on the dev broker, where the
+    # live worker would run them against the dev database.
+    os.environ['CELERY_BROKER_URL'] = CELERY_BROKER_URL
+    os.environ['CELERY_RESULT_BACKEND'] = CELERY_RESULT_BACKEND
+
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'

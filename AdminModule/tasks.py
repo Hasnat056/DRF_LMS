@@ -3,6 +3,7 @@ from itertools import groupby
 from celery import shared_task
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Prefetch
 from rest_framework.generics import get_object_or_404
 
 from Models.models import *
@@ -375,105 +376,178 @@ def reconcile_lifecycle_states():
 
 
 # Data Caching Tasks
+def _cache_list_for(cache_key, queryset, serializer_class, context):
+    """Write one filtered queryset to one key, no cache.delete() first.
+
+    Same reasoning as `_cache_enrollments_for` below: deleting first leaves the
+    key absent for the length of the rebuild, so every reader falls through to
+    the database in the meantime. Writing over it keeps the old value readable
+    until the new one lands.
+    """
+    serializer = serializer_class(queryset, context=context, many=True)
+    cache.set(cache_key, serializer.data, timeout=60*10)
+
+
+def _faculty_cache_queryset():
+    return Faculty.objects.select_related(
+        'employee_id', 'employee_id__user', 'employee_id__address', 'department'
+    ).prefetch_related('employee_id__qualification_set')
+
+
 @shared_task
-def cache_faculty_data_task(user_id):
+def cache_faculty_data_task(user_id, faculty_groups=None):
+    """Rebuild the admin faculty caches.
+
+    With `faculty_groups` unset this rebuilds every key: the full list, one
+    key per department, one per designation, and one per department x
+    designation pair -- every faculty row serialised 5 departments x (1 + 4
+    designations) + 4 times over, for a write that touched a single row.
+
+    `faculty_groups` is an iterable of (department_id, designation) pairs, one
+    per faculty row actually affected -- both the old and new pair on an
+    update, since a faculty member can change department. Only the full list
+    (unavoidable -- one row inside it changed) plus the specific
+    department/designation/pair keys those rows belong to are rebuilt.
+    """
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
+    queryset = _faculty_cache_queryset()
 
-    queryset = Faculty.objects.select_related(
-        'employee_id', 'employee_id__user', 'employee_id__address', 'department'
-    ).prefetch_related('employee_id__qualification_set')
-    cache_key = 'admin:faculty_list'
-    cache.delete(cache_key)
-    serializer = FacultySerializer(queryset,context=context, many=True)
-    cache.set(cache_key, serializer.data, timeout=60*10)
+    _cache_list_for('admin:faculty_list', queryset, FacultySerializer, context)
 
-    designation_choices = Faculty.DESIGNATION_CHOICES
-    departments = Department.objects.all()
+    if faculty_groups is None:
+        designation_choices = Faculty.DESIGNATION_CHOICES
+        departments = Department.objects.all()
 
-    for each in departments:
-        cache_key = f'admin:faculty:department:{each.department_id}'
-        cache.delete(cache_key)
-        dept_data = queryset.filter(department=each.department_id)
-        serializer = FacultySerializer(dept_data, context=context,many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+        for each in departments:
+            dept_data = queryset.filter(department=each.department_id)
+            _cache_list_for(f'admin:faculty:department:{each.department_id}', dept_data, FacultySerializer, context)
+            for key, value in designation_choices:
+                data = dept_data.filter(designation=key)
+                _cache_list_for(f'admin:faculty:{each.department_id}:{key}', data, FacultySerializer, context)
+
         for key, value in designation_choices:
-            cache_key = f'admin:faculty:{each.department_id}:{key}'
-            cache.delete(cache_key)
-            data = dept_data.filter(designation=key)
-            serializer = FacultySerializer(data,context=context, many=True)
-            cache.set(cache_key, serializer.data, timeout=60*10)
+            designation_data = queryset.filter(designation=key)
+            _cache_list_for(f'admin:faculty:designation:{key}', designation_data, FacultySerializer, context)
 
+        return "Faculty data has been cached successfully"
 
-    for key, value in designation_choices:
-        cache_key = f'admin:faculty:designation:{key}'
-        cache.delete(cache_key)
-        designation_data = queryset.filter(designation=key)
-        serializer = FacultySerializer(designation_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+    departments = {department_id for department_id, designation in faculty_groups if department_id is not None}
+    designations = {designation for department_id, designation in faculty_groups if designation}
+    pairs = {
+        (department_id, designation) for department_id, designation in faculty_groups
+        if department_id is not None and designation
+    }
 
+    for department_id in departments:
+        _cache_list_for(
+            f'admin:faculty:department:{department_id}',
+            queryset.filter(department=department_id), FacultySerializer, context,
+        )
+    for designation in designations:
+        _cache_list_for(
+            f'admin:faculty:designation:{designation}',
+            queryset.filter(designation=designation), FacultySerializer, context,
+        )
+    for department_id, designation in pairs:
+        _cache_list_for(
+            f'admin:faculty:{department_id}:{designation}',
+            queryset.filter(department=department_id, designation=designation), FacultySerializer, context,
+        )
 
     return "Faculty data has been cached successfully"
 
 
-@shared_task
-def cache_student_data_task(user_id):
-    user = User.objects.get(id=user_id)
-    custom_request = CustomRequest(user, method='GET')
-    context = {'request': custom_request}
-
-    queryset = Student.objects.select_related(
+def _student_cache_queryset():
+    return Student.objects.select_related(
         'student_id', 'student_id__user', 'student_id__address', 'program',
         'student_class', 'student_class__program',
     ).prefetch_related('student_id__qualification_set')
-    cache_key = 'admin:student_list'
-    cache.delete(cache_key)
-    serializer = StudentSerializer(queryset,context=context, many=True)
-    cache.set(cache_key, serializer.data, timeout=60*10)
 
-    departments = Department.objects.all()
-    programs = Program.objects.all()
-    classes = Class.objects.all()
-    status_choices = Student.STATUS_CHOICES
 
-    for each in departments:
-        cache_key = f'admin:students:department:{each.department_id}'
-        cache.delete(cache_key)
-        department_data = queryset.filter(program__department=each.department_id)
-        serializer = StudentSerializer(department_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+@shared_task
+def cache_student_data_task(user_id, student_groups=None):
+    """Rebuild the admin student caches.
+
+    With `student_groups` unset this rebuilds every key: the full list, one
+    per department, one per department x status, one per program, one per
+    class and one per status -- 5 departments x (1 + 4 statuses) + 10
+    programs + 40 classes + 4 statuses worth of re-serialised passes, all for
+    a write that touched a single student.
+
+    `student_groups` is an iterable of (department_id, program_id, class_id,
+    status) tuples, one per student row actually affected -- both the old and
+    new tuple on an update, since a student can move department, program,
+    class or status in one write. Only the full list (unavoidable) plus the
+    specific department/pair/program/class/status keys those rows belong to
+    are rebuilt.
+    """
+    user = User.objects.get(id=user_id)
+    custom_request = CustomRequest(user, method='GET')
+    context = {'request': custom_request}
+    queryset = _student_cache_queryset()
+
+    _cache_list_for('admin:student_list', queryset, StudentSerializer, context)
+
+    if student_groups is None:
+        departments = Department.objects.all()
+        programs = Program.objects.all()
+        classes = Class.objects.all()
+        status_choices = Student.STATUS_CHOICES
+
+        for each in departments:
+            department_data = queryset.filter(program__department=each.department_id)
+            _cache_list_for(f'admin:students:department:{each.department_id}', department_data, StudentSerializer, context)
+            for key, value in status_choices:
+                data = department_data.filter(status=key)
+                _cache_list_for(f'admin:students:{each.department_id}:{key}', data, StudentSerializer, context)
+
+        for each in programs:
+            _cache_list_for(f'admin:students:program:{each.program_id}', queryset.filter(program=each.program_id), StudentSerializer, context)
+
+        for each in classes:
+            _cache_list_for(f'admin:students:class:{each.class_id}', queryset.filter(student_class=each.class_id), StudentSerializer, context)
+
         for key, value in status_choices:
-            cache_key = f'admin:students:{each.department_id}:{key}'
-            cache.delete(cache_key)
-            data = department_data.filter(status=key)
-            serializer = StudentSerializer(data,context=context, many=True)
-            cache.set(cache_key, serializer.data, timeout=60*10)
+            _cache_list_for(f'admin:students:status:{key}', queryset.filter(status=key), StudentSerializer, context)
 
+        return "Student data has been cached successfully"
 
-    for each in programs:
-        cache_key = f'admin:students:program:{each.program_id}'
-        cache.delete(cache_key)
-        program_data = queryset.filter(program=each.program_id)
-        serializer = StudentSerializer(program_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+    departments = {department_id for department_id, program_id, class_id, status in student_groups if department_id is not None}
+    dept_status_pairs = {
+        (department_id, status) for department_id, program_id, class_id, status in student_groups
+        if department_id is not None and status
+    }
+    programs = {program_id for department_id, program_id, class_id, status in student_groups if program_id is not None}
+    classes = {class_id for department_id, program_id, class_id, status in student_groups if class_id is not None}
+    statuses = {status for department_id, program_id, class_id, status in student_groups if status}
 
-
-    for each in classes:
-        cache_key = f'admin:students:class:{each.class_id}'
-        cache.delete(cache_key)
-        class_data = queryset.filter(student_class=each.class_id)
-        serializer = StudentSerializer(class_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
-
-
-
-    for key, value in status_choices:
-        cache_key = f'admin:students:status:{key}'
-        cache.delete(cache_key)
-        status_data = queryset.filter(status=key)
-        serializer = StudentSerializer(status_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+    for department_id in departments:
+        _cache_list_for(
+            f'admin:students:department:{department_id}',
+            queryset.filter(program__department=department_id), StudentSerializer, context,
+        )
+    for department_id, st in dept_status_pairs:
+        _cache_list_for(
+            f'admin:students:{department_id}:{st}',
+            queryset.filter(program__department=department_id, status=st), StudentSerializer, context,
+        )
+    for program_id in programs:
+        _cache_list_for(
+            f'admin:students:program:{program_id}',
+            queryset.filter(program=program_id), StudentSerializer, context,
+        )
+    for class_id in classes:
+        _cache_list_for(
+            f'admin:students:class:{class_id}',
+            queryset.filter(student_class=class_id), StudentSerializer, context,
+        )
+    for st in statuses:
+        _cache_list_for(
+            f'admin:students:status:{st}',
+            queryset.filter(status=st), StudentSerializer, context,
+        )
 
     return "Student data has been cached successfully"
 
@@ -515,93 +589,196 @@ def cache_courses_data_task(user_id):
     return "Course data has been cached successfully"
 
 
+def _semester_cache_queryset():
+    """The queryset SemesterSerializer actually needs.
+
+    A bare Semester.objects.all() costs 8 queries per row through this
+    serializer: the semesterdetails_set reverse relation, one Course per
+    detail row for get_course_name, the associated_class for
+    get_associated_class, and one Program because Class.__str__ reads
+    self.program.program_id.
+
+    The Prefetch carries `course` on the details rows in the same statement
+    rather than a second one -- filtering through a relation does not fetch
+    it, but select_related on the prefetch queryset does.
+    """
+    return Semester.objects.select_related(
+        'associated_class', 'associated_class__program',
+    ).prefetch_related(
+        Prefetch('semesterdetails_set',
+                 queryset=SemesterDetails.objects.select_related('course')),
+    )
+
+
 @shared_task
-def cache_semester_data_task(user_id):
+def cache_semester_data_task(user_id, class_ids=None):
+    """Rebuild the admin semester caches.
+
+    With `class_ids` unset this rebuilds every key: the full list plus one key
+    per class, for a write that touched a single semester.
+
+    `class_ids` is an iterable of `associated_class` ids actually affected --
+    both the old and new class on an update, since a semester can move to a
+    different class. Only the full list (unavoidable) plus those classes' keys
+    are rebuilt.
+    """
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
     logger.debug('cache_semester_data_task running for user_id=%s', user_id)
     context = {'request': custom_request}
 
-    queryset = Semester.objects.all()
-    cache_key = 'admin:semesters_list'
-    cache.delete(cache_key)
-    serializer = SemesterSerializer(queryset, many=True, context=context)
-    cache.set(cache_key, serializer.data, timeout=60*10)
+    queryset = _semester_cache_queryset()
+    _cache_list_for('admin:semesters_list', queryset, SemesterSerializer, context)
 
-    classes = Class.objects.all()
-    for each in classes:
-        class_data = queryset.filter(associated_class=each.class_id)
-        cache_key = f'admin:semesters:class:{each.class_id}'
-        cache.delete(cache_key)
-        serializer = SemesterSerializer(class_data,context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+    if class_ids is None:
+        classes = Class.objects.all()
+        for each in classes:
+            class_data = queryset.filter(associated_class=each.class_id)
+            _cache_list_for(f'admin:semesters:class:{each.class_id}', class_data, SemesterSerializer, context)
+        return "Semester data has been cached successfully"
 
+    for class_id in dict.fromkeys(class_ids):
+        _cache_list_for(
+            f'admin:semesters:class:{class_id}',
+            queryset.filter(associated_class=class_id), SemesterSerializer, context,
+        )
 
     return "Semester data has been cached successfully"
 
 @shared_task
-def cache_courseAllocation_data_task(user_id):
+def cache_courseAllocation_data_task(user_id, semester_ids=None, faculty_ids=None):
+    """Rebuild the admin course-allocation caches.
+
+    With neither id list given this rebuilds every key: every allocation
+    serialised once per semester group and again per faculty group, for a
+    write that touched a single allocation.
+
+    An allocation's semester is immutable after creation -- the serializer
+    forces it read-only on update specifically so moving one doesn't silently
+    relocate its enrollments -- so a single write only ever affects one
+    semester key. `faculty` has no such restriction (an admin reassigning the
+    teacher on an existing allocation is exactly what the read-only rule
+    above was carving out an exception for), so a caller passing `faculty_ids`
+    for an update should include both the old and new teacher.
+    """
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
 
     queryset = CourseAllocation.objects.all()
-    semester_based_queryset = queryset.order_by('semester')
-    semester_distributed_queryset = {
-        semester_id : list(items) for semester_id, items in groupby(semester_based_queryset, key=lambda x : x.semester.semester_id)
-    }
-    for key, value in semester_distributed_queryset.items():
-        cache_key = f'admin:allocations:semester:{key}'
-        cache.delete(cache_key)
-        serializer = CourseAllocationSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
 
-    faculty_based_queryset = queryset.order_by('faculty')
-    faculty_distributed_queryset = {
-        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.faculty)
+    if semester_ids is None and faculty_ids is None:
+        semester_based_queryset = queryset.order_by('semester')
+        semester_distributed_queryset = {
+            semester_id : list(items) for semester_id, items in groupby(semester_based_queryset, key=lambda x : x.semester.semester_id)
+        }
+        for key, value in semester_distributed_queryset.items():
+            _cache_list_for(f'admin:allocations:semester:{key}', value, CourseAllocationSerializer, context)
 
-    }
-    for key, value in faculty_distributed_queryset.items():
-        cache_key = f'admin:allocations:faculty:{key}'
-        cache.delete(cache_key)
-        serializer = CourseAllocationSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+        faculty_based_queryset = queryset.order_by('faculty')
+        faculty_distributed_queryset = {
+            teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.faculty)
 
+        }
+        for key, value in faculty_distributed_queryset.items():
+            _cache_list_for(f'admin:allocations:faculty:{key}', value, CourseAllocationSerializer, context)
+
+        return 'Course Allocation data has been cached successfully'
+
+    for semester_id in dict.fromkeys(semester_ids or ()):
+        _cache_list_for(
+            f'admin:allocations:semester:{semester_id}',
+            queryset.filter(semester=semester_id), CourseAllocationSerializer, context,
+        )
+    for faculty_id in dict.fromkeys(faculty_ids or ()):
+        _cache_list_for(
+            f'admin:allocations:faculty:{faculty_id}',
+            queryset.filter(faculty=faculty_id), CourseAllocationSerializer, context,
+        )
 
     return 'Course Allocation data has been cached successfully'
 
 
+# EnrollmentSerializer reads obj.student.student_id (Student, then Person) and
+# obj.result on every row. Without this the rebuild runs that lookup 75,000
+# times.
+def _enrollment_cache_queryset():
+    return Enrollment.objects.select_related(
+        'student__student_id', 'allocation__faculty', 'result'
+    )
+
+
+def _cache_enrollments_for(cache_key, enrollments, context):
+    """Write one enrollment list to one key.
+
+    No cache.delete() first: deleting leaves the key *absent* for the length of
+    the rebuild, so every reader falls through to the database. Writing over it
+    keeps the old value readable until the new one lands.
+
+    An empty result is cached as [], not deleted. Empty is the true answer for
+    a student with no enrollments left, and the view treats only None as a
+    miss -- so deleting the key would make every later read miss and fire
+    another rebuild.
+    """
+    serializer = EnrollmentSerializer(enrollments, context=context, many=True)
+    cache.set(cache_key, serializer.data, timeout=60*10)
+
+
 @shared_task
-def cache_enrollment_data_task(user_id):
+def cache_enrollment_data_task(user_id, student_ids=None, faculty_ids=None):
+    """Rebuild the admin enrollment caches.
+
+    With neither id list given this rebuilds every key -- all 75,000
+    enrollments, serialised twice, into about 5,200 keys. That was the only
+    behaviour, and it ran on every create, update and delete, so one student
+    enrolling in one course rebuilt the cache for every student and every
+    teacher in the system. Measured, the fill never finished inside 60
+    seconds: it cost three CPU cores for minutes and returned nothing usable.
+
+    One enrollment changing affects exactly two keys, so the write paths now
+    name them. The full rebuild stays for callers that genuinely want it.
+
+    `user_id` scopes nothing -- it only builds absolute URLs in the serializer.
+    """
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
 
-    queryset = Enrollment.objects.all()
-    student_based_queryset = queryset.order_by('student')
+    queryset = _enrollment_cache_queryset()
 
-    student_distributed_data = {
-        student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student)
-    }
+    if student_ids is None and faculty_ids is None:
+        student_based_queryset = queryset.order_by('student')
+        student_distributed_data = {
+            student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student)
+        }
+        for key, value in student_distributed_data.items():
+            _cache_enrollments_for(f'admin:enrollments:student:{key}', value, context)
 
-    for key, value in student_distributed_data.items():
-        cache_key = f'admin:enrollments:student:{key}'
-        cache.delete(cache_key)
-        serializer = EnrollmentSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+        faculty_based_queryset = queryset.order_by('allocation__faculty')
+        faculty_distributed_data = {
+            teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation.faculty)
+        }
+        for key, value in faculty_distributed_data.items():
+            _cache_enrollments_for(f'admin:enrollments:faculty:{key}', value, context)
 
+        return 'Enrollment data has been cached successfully'
 
-    faculty_based_queryset = queryset.order_by('allocation__faculty')
-    faculty_distributed_data = {
+    # str(Student) and str(Faculty) both return person_id, which is also the
+    # primary key the view reads out of the query param -- so the ids passed in
+    # produce byte-identical key names to the full rebuild above.
+    for student_id in dict.fromkeys(student_ids or ()):
+        _cache_enrollments_for(
+            f'admin:enrollments:student:{student_id}',
+            queryset.filter(student=student_id),
+            context,
+        )
 
-        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation.faculty)
-    }
-
-    for key, value in faculty_distributed_data.items():
-        cache_key = f'admin:enrollments:faculty:{key}'
-        cache.delete(cache_key)
-        serializer = EnrollmentSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60 *10)
+    for faculty_id in dict.fromkeys(faculty_ids or ()):
+        _cache_enrollments_for(
+            f'admin:enrollments:faculty:{faculty_id}',
+            queryset.filter(allocation__faculty=faculty_id),
+            context,
+        )
 
     return 'Enrollment data has been cached successfully'
 

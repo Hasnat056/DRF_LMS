@@ -129,8 +129,10 @@ class TestFacultyListCache:
         self, admin_client, faculty_instance, department
     ):
         """Filtering by department_id should use department-specific cache key."""
-        # populate cache first
-        admin_client.get(f'{ADMIN}/faculty/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(f'{ADMIN}/faculty/?department={department.department_id}')
 
         dept_key = f'admin:faculty:department:{department.department_id}'
         assert cache.get(dept_key) is not None
@@ -144,9 +146,12 @@ class TestFacultyListCache:
         self, admin_client, faculty_instance
     ):
         """Filtering by designation should use designation-specific cache key."""
-        admin_client.get(f'{ADMIN}/faculty/')
-
         designation = faculty_instance.designation
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(f'{ADMIN}/faculty/?designation={designation}')
+
         key = f'admin:faculty:designation:{designation}'
         assert cache.get(key) is not None
 
@@ -219,7 +224,10 @@ class TestStudentListCache:
     def test_program_filter_uses_program_cache_key(
         self, admin_client, student_instance, program
     ):
-        admin_client.get(f'{ADMIN}/students/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(f'{ADMIN}/students/?program={program.program_id}')
         key = f'admin:students:program:{program.program_id}'
         assert cache.get(key) is not None
 
@@ -229,7 +237,10 @@ class TestStudentListCache:
     def test_class_filter_uses_class_cache_key(
         self, admin_client, student_instance, batch_class
     ):
-        admin_client.get(f'{ADMIN}/students/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(f'{ADMIN}/students/?student_class={batch_class.class_id}')
         key = f'admin:students:class:{batch_class.class_id}'
         assert cache.get(key) is not None
 
@@ -239,7 +250,12 @@ class TestStudentListCache:
     def test_department_filter_uses_department_cache_key(
         self, admin_client, student_instance, department
     ):
-        admin_client.get(f'{ADMIN}/students/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(
+            f'{ADMIN}/students/?program__department={department.department_id}'
+        )
         key = f'admin:students:department:{department.department_id}'
         assert cache.get(key) is not None
 
@@ -251,7 +267,10 @@ class TestStudentListCache:
     def test_status_filter_uses_status_cache_key(
         self, admin_client, student_instance
     ):
-        admin_client.get(f'{ADMIN}/students/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(f'{ADMIN}/students/?status={student_instance.status}')
         key = f'admin:students:status:{student_instance.status}'
         assert cache.get(key) is not None
 
@@ -268,10 +287,15 @@ class TestStudentListCache:
             f'admin:students:{dept}:{status}'
         This means the wrong cache key is looked up — always a cache miss.
         """
-        admin_client.get(f'{ADMIN}/students/')
-
         dept_id = department.department_id
         status = student_instance.status
+
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(
+            f'{ADMIN}/students/?program__department={dept_id}&status={status}'
+        )
 
         # The key that SHOULD be written:
         correct_key = f'admin:students:{dept_id}:{status}'
@@ -402,7 +426,12 @@ class TestSemestersListCache:
     def test_class_filter_uses_class_cache_key(
         self, admin_client, inactive_semester, batch_class
     ):
-        admin_client.get(f'{ADMIN}/semesters/')
+        # The warm-up now uses the same filter as the assertion: a miss
+        # rebuilds the unfiltered key plus the group asked for, not every
+        # group in the system.
+        admin_client.get(
+            f'{ADMIN}/semesters/?associated_class={batch_class.class_id}'
+        )
         key = f'admin:semesters:class:{batch_class.class_id}'
         assert cache.get(key) is not None
 

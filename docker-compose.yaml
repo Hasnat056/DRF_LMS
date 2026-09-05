@@ -153,9 +153,97 @@ services:
     deploy:
       replicas: 2
 
+  # ---------------------------------------------------------------------
+  # Test / benchmark stack. Not started by default — bring it up with
+  #     docker compose --profile test up -d database-test redis-test
+  #
+  # Isolated from dev for two reasons: the suite's autouse fixtures call
+  # cache.clear() on every test, which would otherwise flush whatever the
+  # running app had cached; and benchmark timings should not compete with dev
+  # queries for the same MySQL container's CPU and buffer pool.
+  # ---------------------------------------------------------------------
+  database-test:
+    profiles: ["test"]
+    env_file:
+      - .env
+    image: mysql:8.0
+    container_name: nexusapi-database-test
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      # A normal volume, deliberately not tmpfs: production runs MySQL on disk,
+      # and timing queries against RAM would hide the I/O cost the benchmarks
+      # exist to measure.
+      - mysql_test_data:/var/lib/mysql
+      # Grants the app user server-wide rights so the Django test runner can
+      # create and drop its own `test_*` database.
+      - ./tests/benchmarks/mysql-test-init.sql:/docker-entrypoint-initdb.d/10-grants.sql:ro
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # A real worker for the benchmark stack, so `.delay()` behaves the way it does
+  # in production: the request publishes a job and returns, and the cache is
+  # filled asynchronously. Without it the suite's autouse CELERY_TASK_ALWAYS_EAGER
+  # fixture runs cache_*_data_task inline, inside the request being timed --
+  # which inflated every "cold" figure in the first audit run by the cost of a
+  # full cache rebuild that production does on a worker.
+  celery-worker-test:
+    profiles: ["test"]
+    env_file:
+      - .env
+    build: .
+    container_name: nexusapi-celery-worker-test
+    command: celery -A NexusAPI worker --loglevel=info
+    restart: unless-stopped
+    environment:
+      # Flips settings.RUNNING_TESTS so this worker reads database-test and
+      # redis-test rather than the dev stack...
+      TEST_MODE: "true"
+      # ...and targets the database pytest-django builds for the benchmarks.
+      # `--reuse-db` keeps it between runs, so a static name is safe.
+      DB_NAME: test_${DB_NAME}_bench
+      # Belt and braces: Celery honours these env vars directly, ahead of
+      # Django settings, and `.env` above points them at the dev broker.
+      CELERY_BROKER_URL: redis://redis-test:6379/2
+      CELERY_RESULT_BACKEND: redis://redis-test:6379/3
+    volumes:
+      - .:/app
+    depends_on:
+      redis-test:
+        condition: service_healthy
+      database-test:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  redis-test:
+    profiles: ["test"]
+    image: redis:latest
+    container_name: nexusapi-redis-test
+    restart: unless-stopped
+    command: redis-server --save ""
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
 volumes:
   code_files:
   mysql_data:
+  mysql_test_data:
   static_files:
   redis_data:
 

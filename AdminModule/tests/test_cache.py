@@ -565,7 +565,7 @@ class TestEnrollmentsListCache:
         self, admin_client, student_instance, course_allocation
     ):
         """Creating an enrollment must refresh cache."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {

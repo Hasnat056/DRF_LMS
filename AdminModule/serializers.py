@@ -20,7 +20,7 @@ from Models.models import *
 from django.contrib.auth.models import User
 from FacultyModule.serializers import LectureSerializer, AssessmentSerializer
 from StudentModule.serializers import ReviewsSerializer
-from .mixins import PersonSerializerMixin, ResultCalculationMixin
+from .mixins import PersonSerializerMixin, ResultCalculationMixin, TranscriptGenerationMixin
 
 logger = logging.getLogger(__name__)
 
@@ -604,6 +604,7 @@ class ClassSerializer(serializers.ModelSerializer):
 
         logger.debug('Updating scheme_of_studies=%s', scheme_of_studies)
 
+        touched_sessions = set()
         semester_ids = [s['semester_id'] for s in scheme_of_studies]
         semester_queryset = get_list_or_404(Semester, semester_id__in=semester_ids)
         loaded_semesters = {each.semester_id: each for each in semester_queryset}
@@ -625,12 +626,42 @@ class ClassSerializer(serializers.ModelSerializer):
                         course = loaded_course_codes[each['course']]
                         SemesterDetails.objects.create(course=course, semester=semester)
 
+                if 'session' in each_semester and each_semester['session'] is not None:
+                    # A class runs one semester per session — activation
+                    # cascades from the session, so a second binding would put
+                    # two semesters of this class live at once. The DB enforces
+                    # this too; checking here turns a 500 into a clean 400.
+                    clash = (
+                        Semester.objects
+                        .filter(associated_class=instance, session_id=each_semester['session'])
+                        .exclude(semester_id=semester.semester_id)
+                        .first()
+                    )
+                    if clash:
+                        logger.warning(
+                            'Rejected session binding for semester_id=%s: class %s already has '
+                            'semester_id=%s on session_id=%s',
+                            semester.semester_id, instance, clash.semester_id, each_semester['session']
+                        )
+                        raise serializers.ValidationError(
+                            f'Class {instance} already has semester {clash.semester_no} bound to '
+                            f'this session. A class runs one semester per session.'
+                        )
+
                 if 'session' in each_semester:
                     semester.session_id = each_semester['session']
                 semester.save()
+                touched_sessions.add(semester.session_id)
 
             else:
                 raise Http404(f"Semester with id {each_semester['semester_id']} not found")
+
+        # The bulk allocation worksheet caches this structure — courses and
+        # session bindings both come from here, so a scheme-of-studies edit
+        # makes it stale.
+        for session_id in touched_sessions:
+            if session_id:
+                cache.delete(f'admin:{session_id}:allocations:bulk')
 
         return instance
 
@@ -699,7 +730,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             return fields
 
 
-        queryset = CourseAllocation.objects.filter(status='Ongoing')
+        queryset = CourseAllocation.objects.filter(status='Active')
         if queryset.exists():
             fields['allocation'].queryset = queryset
         else:
@@ -745,6 +776,7 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
             'semester',
             'session',
             'status',
+            'passing_threshold',
             'assessment_set',
             'enrollment_set',
             'lecture_set',
@@ -758,7 +790,7 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
             fields['semester'].queryset = Semester.objects.none()
             return fields
 
-        queryset = Semester.objects.filter(status='Inactive', session__status='Initiated', activation_deadline__isnull=False)
+        queryset = Semester.objects.filter(status='Inactive', session__status='Initiated')
         if queryset.exists():
             fields['semester'].queryset = queryset
         else:
@@ -776,12 +808,25 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
                 'semester':{'read_only': True},
                 'status':{'read_only': True},
                 'session':{'read_only': True},
+                # The cutoff stays writable while the allocation is locked —
+                # that is the whole point of the locked window, so results can
+                # be recalculated. It freezes when the semester closes.
+                'passing_threshold': {'read_only': self.instance.status == 'Completed'},
             }
         if request and request.user.groups.filter(name="Admin").exists():
             extra_kwargs = {
                 'session' : {'read_only': True},
                 'status' : {'read_only': True},
+                # The cutoff is the teacher's academic judgement, not admin's.
+                'passing_threshold' : {'read_only': True},
             }
+            # An admin editing an existing allocation may only reassign the
+            # teacher. Course and semester come from the scheme of studies, and
+            # moving either would silently relocate any enrollments hanging off
+            # this allocation.
+            if request.method in ('PUT', 'PATCH') and isinstance(self.instance, CourseAllocation):
+                extra_kwargs['course'] = {'read_only': True}
+                extra_kwargs['semester'] = {'read_only': True}
 
         return extra_kwargs
 
@@ -816,6 +861,138 @@ class CourseAllocationSerializer(serializers.ModelSerializer, ResultCalculationM
         return allocation
 
 
+class BulkCourseAllocationListSerializer(serializers.ListSerializer):
+    """Cross-row validation and the batched write for the allocation worksheet.
+
+    Writing is only open while the session is Initiated — that is the window in
+    which allocations are set up, and nothing references them yet. Once the
+    session goes Available, enrollment opens against these allocations and the
+    worksheet becomes read-only; a single faculty correction then goes through
+    the per-allocation endpoint instead.
+    """
+
+    WRITABLE_STATUS = 'Initiated'
+
+    def validate(self, rows):
+        if not rows:
+            raise serializers.ValidationError('No allocations provided.')
+
+        semesters = {row['semester'].pk: row['semester'] for row in rows}
+
+        sessions = {sem.session_id for sem in semesters.values()}
+        if len(sessions) > 1:
+            raise serializers.ValidationError(
+                'All rows must belong to semesters of a single session.'
+            )
+        if sessions == {None}:
+            raise serializers.ValidationError(
+                'These semesters are not bound to any session.'
+            )
+
+        session = next(iter(semesters.values())).session
+        if session.status != self.WRITABLE_STATUS:
+            raise serializers.ValidationError(
+                f'Session {session} is {session.status}. Bulk allocation is only open '
+                f'while the session is Initiated; afterwards, change a single '
+                f'allocation through its own endpoint.'
+            )
+        self.session = session
+
+        for sem in semesters.values():
+            if sem.status != 'Inactive':
+                raise serializers.ValidationError(
+                    f'Semester {sem} is {sem.status}; allocations are frozen once it activates.'
+                )
+
+        # Courses a semester is allowed to run, from its scheme of studies.
+        allowed = {}
+        for detail in SemesterDetails.objects.filter(
+            semester_id__in=semesters, course__isnull=False
+        ):
+            allowed.setdefault(detail.semester_id, set()).add(detail.course_id)
+
+        existing = {
+            (a.semester_id, a.course_id): a
+            for a in CourseAllocation.objects.filter(semester_id__in=semesters)
+        }
+
+        errors = {}
+        seen = set()
+        for index, row in enumerate(rows):
+            key = (row['semester'].pk, row['course'].pk)
+
+            if key in seen:
+                errors[index] = f'Duplicate row for course {row["course"]} in this semester.'
+                continue
+            seen.add(key)
+
+            if row['course'].pk not in allowed.get(row['semester'].pk, set()):
+                errors[index] = (
+                    f'Course {row["course"]} is not in the scheme of studies for '
+                    f'semester {row["semester"]}.'
+                )
+                continue
+
+        if errors:
+            logger.warning(
+                'Rejected bulk allocation payload for session_id=%s: %s row error(s)',
+                session.id, len(errors)
+            )
+            raise serializers.ValidationError(errors)
+
+        self.existing = existing
+        return rows
+
+    @transaction.atomic
+    def create(self, validated_data):
+        to_create, to_update = [], []
+
+        for row in validated_data:
+            key = (row['semester'].pk, row['course'].pk)
+            current = self.existing.get(key)
+
+            if current is None:
+                to_create.append(CourseAllocation(
+                    semester=row['semester'],
+                    course=row['course'],
+                    faculty=row['faculty'],
+                    # `session` is a denormalised CharField, not an FK.
+                    session=str(row['semester'].session),
+                    status='Inactive',
+                ))
+            elif current.faculty_id != row['faculty'].pk:
+                current.faculty = row['faculty']
+                to_update.append(current)
+
+        if to_create:
+            CourseAllocation.objects.bulk_create(to_create)
+        if to_update:
+            # faculty is the only field an admin may change; status and session
+            # stay under the lifecycle's control.
+            CourseAllocation.objects.bulk_update(to_update, ['faculty'])
+
+        from .tasks import cache_semester_enrollment_data_task
+
+        # This cache key is per class and never expires, so it must be
+        # refreshed once for every semester the batch touched.
+        for semester_id in {row['semester'].pk for row in validated_data}:
+            cache_semester_enrollment_data_task.delay(semester_id)
+
+        logger.info(
+            'Bulk allocation for session_id=%s: %s created, %s updated',
+            self.session.id, len(to_create), len(to_update)
+        )
+        return {'created': len(to_create), 'updated': len(to_update)}
+
+
+class BulkCourseAllocationSerializer(serializers.Serializer):
+    """One row of the allocation worksheet: which teacher runs which course."""
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
+    faculty = serializers.PrimaryKeyRelatedField(queryset=Faculty.objects.all())
+
+    class Meta:
+        list_serializer_class = BulkCourseAllocationListSerializer
 
 
 
@@ -865,7 +1042,7 @@ class TranscriptSerializer(serializers.ModelSerializer):
 
 
 
-class BulkTranscriptSerializer(serializers.Serializer):
+class BulkTranscriptSerializer(TranscriptGenerationMixin, serializers.Serializer):
     confirm = serializers.BooleanField(write_only=True)
     class Meta:
         fields = [
@@ -880,63 +1057,20 @@ class BulkTranscriptSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        if not validated_data['confirm']:
-            return None
-
-        data = []
         semester = Semester.objects.filter(semester_id=self.context.get('semester_id')).first()
-
-        # if semester is not found
         if not semester:
             raise serializers.ValidationError('Semester not found')
 
         if semester.status == 'Completed':
             raise serializers.ValidationError('Transcripts already exists')
 
-
-        student_list = Student.objects.filter(enrollment__allocation__semester=semester).prefetch_related(
-            Prefetch(
-                'enrollment_set',queryset=Enrollment.objects.filter(allocation__semester=semester)
-                     .prefetch_related('result'))
-        )
-
-        # checking if results exists for all enrollments of each student
-        errors = {}
-        for student in student_list:
-            for enrollment in student.enrollment_set.all():
-                if not hasattr(enrollment, 'result') or not enrollment.result or not enrollment.result.course_gpa:
-                    errors[f'{student.student_id.person_id}'] = f'Result does not exist for enrollment {enrollment.enrollment_id}'
-
-        if errors:
-            raise serializers.ValidationError(errors)
-
-
-        # semester_gpa and total_credits calculations using results for all enrollments of a student
-        for each_student in student_list:
-            gpa = Decimal('0.00')
-            total_credits_attempted = Decimal('0.0')
-
-            if each_student.enrollment_set.exists() and all([e.status == 'Completed' for e in each_student.enrollment_set.all()]):
-                gpa += sum([e.result.course_gpa*e.allocation.course.credit_hours for e in each_student.enrollment_set.all()])
-                total_credits_attempted += sum([e.allocation.course.credit_hours for e in each_student.enrollment_set.all()])
-
-            if total_credits_attempted == 0:
-                raise serializers.ValidationError('Total credits are zero, GPA cannot be calculated')
-            gpa = gpa/total_credits_attempted
-
-            data.append(
-                Transcript(
-                    student=each_student,
-                    semester=semester,
-                    total_credits=total_credits_attempted,
-                    semester_gpa=gpa
-                )
-            )
-
-        transcripts = Transcript.objects.bulk_create(data)
-
-        return transcripts
-
+        try:
+            return self.generate_transcripts(semester)
+        except ValueError as missing:
+            # The mixin reports missing results as a per-student map; here that
+            # is a validation error, while the closing task treats it as a
+            # signal to calculate them first.
+            raise serializers.ValidationError(missing.args[0])
 
 
 class ChangeRequestSerializer(serializers.ModelSerializer):
@@ -1169,6 +1303,13 @@ class CurrentSessionSerializer(serializers.ModelSerializer):
 
 
 class SessionSerializer(serializers.ModelSerializer):
+    # How long before the closing deadline each pending-results nudge fires.
+    REMINDER_SCHEDULE = [
+        (timedelta(days=2), '2 days'),
+        (timedelta(days=1), '1 day'),
+        (timedelta(hours=6), '6 hours'),
+    ]
+
     url = serializers.HyperlinkedIdentityField(
         view_name='Admin:session-detail',
         lookup_field='id',
@@ -1206,16 +1347,60 @@ class SessionSerializer(serializers.ModelSerializer):
         return value
 
     def validate_activation_deadline(self, value):
-        if value and value < timezone.now():
-            raise serializers.ValidationError('Activation deadline cannot be in the past')
+        # At least two weeks out, so the default one-week availability window
+        # still has a full week of runway ahead of it.
+        if value and value < timezone.now() + timedelta(weeks=2):
+            raise serializers.ValidationError('Activation deadline must be at least 2 weeks ahead')
         if value and value > timezone.now() + timedelta(weeks=4):
             raise serializers.ValidationError('Activation deadline cannot be more than 4 weeks in the future')
         return value
 
+    def validate(self, data):
+        if 'availability_delta' not in data:
+            return data
+
+        activation = data.get('activation_deadline') or (
+            self.instance.activation_deadline if self.instance else None
+        )
+
+        # The delta only means anything relative to an activation deadline.
+        if not activation:
+            raise serializers.ValidationError({
+                'availability_delta':
+                    'Cannot be set until the session has an activation deadline.'
+            })
+
+        # Once activation has passed, the enrollment window is already open or
+        # over — moving its start would rewrite history.
+        if activation <= timezone.now():
+            raise serializers.ValidationError({
+                'availability_delta':
+                    'Cannot be changed once the activation deadline has passed.'
+            })
+
+        # The window has to start in the future, so the delta cannot reach back
+        # further than the activation deadline itself.
+        if activation - timedelta(days=data['availability_delta']) <= timezone.now():
+            raise serializers.ValidationError({
+                'availability_delta':
+                    f'A {data["availability_delta"]}-day window would open before now; '
+                    f'the activation deadline is {activation:%Y-%m-%d %H:%M}.'
+            })
+
+        return data
+
     def validate_closing_deadline(self, value):
-        if value and value < timezone.now():
-            raise serializers.ValidationError('Closing deadline cannot be in the past')
-        if value and self.instance and self.instance.activation_deadline and value <= self.instance.activation_deadline:
+        # Clearing the deadline would strand the locking cascade and the
+        # scheduled reminders, which are already keyed to it.
+        if value is None:
+            raise serializers.ValidationError('Closing deadline cannot be cleared.')
+        # At least a week out, so the 2-day, 1-day and 6-hour reminders all
+        # have room to fire before results are calculated automatically.
+        if value < timezone.now() + timedelta(weeks=1):
+            raise serializers.ValidationError('Closing deadline must be at least 1 week ahead')
+        if value > timezone.now() + timedelta(weeks=4):
+            raise serializers.ValidationError('Closing deadline cannot be more than 4 weeks ahead')
+        if self.instance and self.instance.activation_deadline and value <= self.instance.activation_deadline:
             raise serializers.ValidationError('Closing deadline must be after activation deadline')
         return value
 
@@ -1285,11 +1470,59 @@ class SessionSerializer(serializers.ModelSerializer):
                 cache.delete(closing_cache_key)
                 logger.info('Revoked previous closing task for session_id=%s', instance.id)
 
-            from .tasks import session_closing_task
+            from .tasks import (
+                session_closing_task, session_locking_task,
+                pending_results_reminder_task,
+            )
+
             task = session_closing_task.apply_async(args=[instance.id], eta=instance.closing_deadline)
             cache.set(closing_cache_key, task.id, timeout=None)
 
+            # Setting a closing deadline freezes the session's coursework:
+            # assessments and marks stop moving, while faculty keep the window
+            # to calculate results and adjust passing_threshold.
+            session_locking_task.delay(instance.id)
+
+            # Escalating nudges for allocations still without results. The
+            # 1-week minimum on closing_deadline guarantees every one of these
+            # lands in the future.
+            for delta, remaining in self.REMINDER_SCHEDULE:
+                old_task_id = cache.get(f'session:reminder:{remaining}:{instance.id}')
+                if old_task_id:
+                    app.control.revoke(old_task_id, terminate=True)
+                    cache.delete(f'session:reminder:{remaining}:{instance.id}')
+
+                reminder = pending_results_reminder_task.apply_async(
+                    args=[instance.id, remaining],
+                    eta=instance.closing_deadline - delta,
+                )
+                cache.set(f'session:reminder:{remaining}:{instance.id}', reminder.id, timeout=None)
+
             logger.info('Session %s closing scheduled for %s', instance.id, instance.closing_deadline)
+            return instance
+
+        if 'availability_delta' in validated_data:
+            # Moving the delta moves when enrollment opens, so the already
+            # queued availability task has to be re-aimed — otherwise it fires
+            # at the moment the old delta implied.
+            instance = super().update(instance, validated_data)
+
+            availability_cache_key = f'session:availability:{instance.id}'
+            old_task_id = cache.get(availability_cache_key)
+            if old_task_id:
+                app.control.revoke(old_task_id, terminate=True)
+                cache.delete(availability_cache_key)
+
+            from .tasks import session_availability_task
+            task = session_availability_task.apply_async(
+                args=[instance.id], eta=instance.availability_deadline,
+            )
+            cache.set(availability_cache_key, task.id, timeout=None)
+
+            logger.info(
+                'Session %s availability re-scheduled for %s (delta now %s day(s))',
+                instance.id, instance.availability_deadline, instance.availability_delta,
+            )
             return instance
 
         return super().update(instance, validated_data)
@@ -1314,8 +1547,6 @@ class SemesterSerializer(serializers.ModelSerializer):
             'semester_no',
             'session',
             'status',
-            'activation_deadline',
-            'closing_deadline',
             'associated_class',
             'semesterdetails_set',
             'courseallocation_set',
@@ -1329,34 +1560,12 @@ class SemesterSerializer(serializers.ModelSerializer):
 
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
-        if isinstance(self.instance, Semester):
-            if not self.instance.activation_deadline:
-                extra_kwargs['closing_deadline'] = {'read_only': True}
-            if self.instance.activation_deadline  and self.instance.activation_deadline < timezone.now():
-                extra_kwargs['activation_deadline'] = {'read_only': True}
-                extra_kwargs['session'] = {'read_only': True}
-            if self.instance.activation_deadline and self.instance.activation_deadline > timezone.now() and self.instance.status == 'Inactive':
-                extra_kwargs['closing_deadline'] = {'read_only': True}
-            if self.instance.activation_deadline and self.instance.closing_deadline and self.instance.closing_deadline < timezone.now():
-                extra_kwargs['closing_deadline'] = {'read_only': True}
-                extra_kwargs['activation_deadline'] = {'read_only': True}
-                extra_kwargs['session'] = {'read_only': True}
-
+        # A semester's session is fixed once the session has gone live —
+        # activation is driven from the session, so rebinding it mid-flight
+        # would strand the semester in the wrong lifecycle.
+        if isinstance(self.instance, Semester) and self.instance.status != 'Inactive':
+            extra_kwargs['session'] = {'read_only': True}
         return extra_kwargs
-
-    def validate_activation_deadline(self, value):
-        if value and value < timezone.now():
-            raise serializers.ValidationError('Activation deadline cannot be is the past')
-        if value and (timezone.now() < value < timezone.now() + timedelta(minutes=7)):
-            raise serializers.ValidationError('Set activation deadline at least a week ahead')
-        return value
-
-    def validate_closing_deadline(self, value):
-        if value and value < timezone.now():
-            raise serializers.ValidationError('Closing deadline cannot be is the past')
-        if value and (timezone.now() < value < timezone.now() + timedelta(minutes=7)):
-            raise serializers.ValidationError('Set closing deadline at least a week ahead')
-        return value
 
     @extend_schema_field(OpenApiTypes.URI)
     def get_transcript_generation_url(self, obj):
@@ -1379,101 +1588,10 @@ class SemesterSerializer(serializers.ModelSerializer):
             self.fields.pop('transcript_generation_url')
             self.fields.pop('courseallocation_set')
             self.fields.pop('transcript_set')
-        if isinstance(self.instance, Semester):
-            if not self.instance.closing_deadline:
-                self.fields.pop('transcript_generation_url')
+        elif not (self.instance.session and self.instance.session.closing_deadline):
+            # Transcripts belong to the closing window. Until the session has a
+            # closing deadline the coursework is not locked, results are still
+            # being entered, and generating now would capture a half-graded
+            # semester.
+            self.fields.pop('transcript_generation_url')
 
-    def update(self, instance, validated_data):
-
-        cache_key = f'semester:activation:{instance.semester_id}'
-        if 'activation_deadline' in validated_data:
-            associated_class = instance.associated_class
-            if associated_class:
-               conflicting_semester = (Semester.objects.filter(associated_class=associated_class, activation_deadline__isnull=False).exclude(
-                   semester_id=instance.semester_id
-               ).exclude(
-                   status='Completed'
-               ).first())
-
-               if conflicting_semester:
-                    if conflicting_semester.status == 'Active':
-                        logger.warning(
-                            'Rejected activation_deadline for semester_id=%s: class %s already has active semester_id=%s',
-                            instance.semester_id, associated_class, conflicting_semester.semester_id
-                        )
-                        raise serializers.ValidationError(
-                            f"Class: {associated_class} already has an active semester: {conflicting_semester}."
-                        )
-                    if conflicting_semester.status == 'Inactive':
-                        logger.warning(
-                            'Rejected activation_deadline for semester_id=%s: class %s already has scheduled semester_id=%s',
-                            instance.semester_id, associated_class, conflicting_semester.semester_id
-                        )
-                        raise serializers.ValidationError(
-                            f"Class: {associated_class} already has a semester scheduled for activation: {conflicting_semester}. Cancel it first."
-                        )
-
-
-
-
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
-            instance.save()
-
-            old_task_id = cache.get(f"semester:activation:{instance.semester_id}")
-            if old_task_id:
-                app.control.revoke(old_task_id, terminate=True)
-                cache.delete(cache_key)
-                logger.info('Revoked previous activation task for semester_id=%s', instance.semester_id)
-
-            if validated_data['activation_deadline'] is None:
-                logger.info('Activation cancelled for semester_id=%s', instance.semester_id)
-                return instance
-
-            from .tasks import semester_activation_task, cache_semester_enrollment_data_task
-
-            task = semester_activation_task.apply_async(args=[instance.semester_id], eta=instance.activation_deadline)
-            cache.set(cache_key, task.id, timeout=None)
-            cache_semester_enrollment_data_task.delay(instance.semester_id)
-
-            logger.info(
-                'Semester %s activation scheduled for %s', instance.semester_id, instance.activation_deadline
-            )
-            return instance
-
-        if 'closing_deadline' in validated_data:
-            errors = {}
-            for each in instance.courseallocation_set.all():
-                for each_enrollment in each.enrollment_set.all():
-                    if not each_enrollment.result.course_gpa:
-                        errors[each_enrollment.enrollment_id] = f'Course Allocation : {str(each)} has no result for enrollment {str(each_enrollment)}'
-
-
-            if errors:
-                logger.warning(
-                    'Rejected closing_deadline for semester_id=%s: %s enrollment(s) missing results',
-                    instance.semester_id, len(errors)
-                )
-                raise serializers.ValidationError(errors)
-
-
-            instance.closing_deadline = validated_data['closing_deadline']
-            instance.save()
-
-            closing_cache_key = f'semester:closing:{instance.semester_id}'
-            old_task_id = cache.get(closing_cache_key)
-            if old_task_id:
-                app.control.revoke(old_task_id, terminate=True)
-                cache.delete(closing_cache_key)
-                logger.info('Revoked previous closing task for semester_id=%s', instance.semester_id)
-
-            from .tasks import semester_closing_task
-            task = semester_closing_task.apply_async(args=[instance.semester_id], eta=instance.closing_deadline)
-            cache.set(closing_cache_key, task.id, timeout=None)
-
-            logger.info(
-                'Semester %s closing scheduled for %s', instance.semester_id, instance.closing_deadline
-            )
-            return instance
-
-        return instance

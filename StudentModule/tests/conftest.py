@@ -34,8 +34,8 @@ def clear_cache():
 
 @pytest.fixture
 def active_allocation(db, course_allocation):
-    """course_allocation with status='Ongoing' so student queries include it."""
-    course_allocation.status = 'Ongoing'
+    """course_allocation with status='Active' so student queries include it."""
+    course_allocation.status = 'Active'
     course_allocation.save()
     return course_allocation
 

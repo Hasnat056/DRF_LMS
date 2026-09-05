@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
-from django.db.models import CheckConstraint, Q
+from django.db.models import CheckConstraint, Q, F
 
 
 def current_date():
@@ -96,6 +96,16 @@ class AcademicSession(models.Model):
     class Meta:
         unique_together = (('period', 'year'),)
         ordering = ['year', 'period']
+        constraints = [
+            # The only one of the deadline rules a database can hold: the rest
+            # are relative to "now", which a CHECK cannot reference. When
+            # either column is NULL the comparison is UNKNOWN, which SQL treats
+            # as satisfied — so a session without deadlines is unaffected.
+            CheckConstraint(
+                condition=Q(closing_deadline__gt=F('activation_deadline')),
+                name='closing_deadline_after_activation_deadline'
+            )
+        ]
 
     def __str__(self):
         return f"{self.period}-{self.year}"
@@ -118,12 +128,19 @@ class Semester(models.Model):
     semester_no = models.PositiveIntegerField()
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Inactive', db_index=True)
     session = models.ForeignKey('AcademicSession', on_delete=models.RESTRICT, db_index=True, blank=True, null=True)
-    activation_deadline = models.DateTimeField(blank=True, null=True)
-    closing_deadline = models.DateTimeField(blank=True, null=True)
+    # Activation and closing are driven by the parent AcademicSession's
+    # deadlines, which cascade to every semester bound to it. Semesters are
+    # not scheduled individually.
     associated_class = models.ForeignKey('Class', on_delete=models.RESTRICT)
 
     class Meta:
         db_table = 'semester'
+        # A class runs one semester per session. Activation cascades from the
+        # session to every semester bound to it, so two semesters of the same
+        # class on one session would both go Active — `status` records that
+        # but cannot prevent it. MySQL treats NULLs as distinct, so the
+        # unbound semesters created up-front with session=NULL are unaffected.
+        unique_together = (('associated_class', 'session'),)
         ordering = ['semester_id', 'status']
 
     def __str__(self):
@@ -168,21 +185,39 @@ class CourseAllocation(models.Model):
 
     STATUS_CHOICES = [
         ('Inactive', 'Inactive'),
-        ('Ongoing','Ongoing'),
+        ('Active', 'Active'),
+        # Set when an admin puts a closing_deadline on the session. The
+        # allocation and its assessments freeze — only passing_threshold stays
+        # editable, so results can be recalculated under a different cutoff.
+        ('Locked', 'Locked'),
         ('Completed','Completed'),
         ('Cancelled','Cancelled'),
     ]
+
     allocation_id = models.AutoField(primary_key=True)
     faculty = models.ForeignKey('Faculty', on_delete=models.RESTRICT, db_index=True)
     course = models.ForeignKey('Course', on_delete=models.RESTRICT)
     semester = models.ForeignKey('Semester', on_delete=models.RESTRICT, db_index=True)
     session = models.CharField(max_length=20, blank=True, null=True, db_index=True)
-    status = models.CharField(max_length=9, choices=STATUS_CHOICES, default='Inactive', db_column='status')
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Inactive', db_column='status')
+    # Percentage a student must reach to pass this course.
+    passing_threshold = models.PositiveSmallIntegerField(default=50)
 
     class Meta:
         db_table = 'courseAllocation'
-        unique_together = (('faculty', 'course', 'semester'),)
+        # One course in one semester is one section with one teacher. The old
+        # key led with `faculty`, which allowed the same course to be
+        # allocated twice to different teachers — duplicating it in the
+        # enrollment window and double-counting its credit hours in
+        # transcript GPA.
+        unique_together = (('course', 'semester'),)
         ordering = ['allocation_id', 'faculty', 'semester']
+        constraints = [
+            CheckConstraint(
+                condition=Q(passing_threshold__gte=30) & Q(passing_threshold__lte=50),
+                name='valid_passing_threshold_range'
+            )
+        ]
 
     def __str__(self):
         return f"[{self.course.course_code}_{self.faculty.employee_id.person_id}_{self.session}]"
@@ -286,6 +321,9 @@ class Enrollment(models.Model):
     STATUS_CHOICES = [
         ('Inactive', 'Inactive'),
         ('Active', 'Active'),
+        # Locked alongside its allocation when the closing_deadline is set.
+        # Marks and student uploads freeze; results may still be calculated.
+        ('Locked', 'Locked'),
         ('Completed', 'Completed'),
         ('Dropped', 'Dropped'),
     ]

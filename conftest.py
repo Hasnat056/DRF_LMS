@@ -233,7 +233,6 @@ def inactive_semester(db, batch_class, course, academic_session):
         semester_no=1,
         status='Inactive',
         session=academic_session,
-        activation_deadline=timezone.now() + timedelta(days=2),
         associated_class=batch_class,
     )
     SemesterDetails.objects.create(
@@ -244,12 +243,37 @@ def inactive_semester(db, batch_class, course, academic_session):
 
 
 @pytest.fixture
-def active_semester(db, batch_class, course, academic_session):
+def second_faculty(db, faculty_group, department):
+    """A second teacher, for testing reassignment."""
+    user = User.objects.create_user(username='faculty2@test.com', password='facultypass123')
+    user.groups.add(faculty_group)
+    person = Person.objects.create(
+        person_id='NUM-CS-2024-2',
+        first_name='Second', last_name='Teacher', father_name='F',
+        gender='Female', dob=date(1988, 5, 1),
+        cnic='12345-1234567-9', contact_number='+923001234599',
+        institutional_email='faculty2@test.com', type='Faculty', user=user,
+    )
+    return Faculty.objects.create(
+        employee_id=person, department=department,
+        designation='Lecturer', joining_date=date(2021, 1, 1),
+    )
+
+
+@pytest.fixture
+def previous_session(db):
+    """A separate, already-running session. A class runs one semester per
+    session (unique_together on Semester), so an Active semester for the same
+    class cannot share `academic_session` with `inactive_semester`."""
+    return AcademicSession.objects.create(period='Spring', year=2024, status='Active')
+
+
+@pytest.fixture
+def active_semester(db, batch_class, course, previous_session):
     semester = Semester.objects.create(
-        semester_no=1,
+        semester_no=2,
         status='Active',
-        session=academic_session,
-        activation_deadline=timezone.now() - timedelta(days=1),
+        session=previous_session,
         associated_class=batch_class,
     )
     SemesterDetails.objects.create(

@@ -156,71 +156,59 @@ class TestSemesterAPIRetrieve:
         for field in ['semester_id', 'semester_no', 'session', 'status', 'semesterdetails_set']:
             assert field in response.data, f"Missing field: {field}"
 
-    def test_inactive_semester_has_no_transcript_url(self, admin_client, inactive_semester):
-        """transcript_generation_url only appears when closing_deadline is set."""
+    def test_semester_has_no_deadline_fields(self, admin_client, inactive_semester):
+        """Activation/closing are driven by the parent AcademicSession."""
         url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
         response = admin_client.get(url)
-        assert 'transcript_generation_url' not in response.data
+        assert 'activation_deadline' not in response.data
+        assert 'closing_deadline' not in response.data
 
 
 @pytest.mark.django_db
-class TestSemesterAPIActivationDeadline:
+class TestSemesterOnePerClassPerSession:
+    """A class runs one semester per session. Activation cascades from the
+    session to every semester bound to it, so a second binding would put two
+    semesters of the same class live at once."""
 
-    def test_set_activation_deadline_in_future_succeeds(
-        self, admin_client, inactive_semester
+    def test_db_rejects_second_semester_for_same_class_and_session(
+        self, batch_class, inactive_semester, academic_session
     ):
-        """Setting activation_deadline to a future time should succeed."""
-        url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
-        future = (timezone.now() + timedelta(days=5)).isoformat()
-        response = admin_client.patch(url, {'activation_deadline': future}, format='json')
-        # 200 OK; Celery task is scheduled (mocked in test env)
-        assert response.status_code == 200
+        from django.db import IntegrityError, transaction
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                Semester.objects.create(
+                    semester_no=7,
+                    status='Inactive',
+                    session=academic_session,
+                    associated_class=batch_class,
+                )
 
-    def test_set_activation_deadline_in_past_returns_400(
-        self, admin_client, inactive_semester
-    ):
-        url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
-        past = (timezone.now() - timedelta(days=1)).isoformat()
-        response = admin_client.patch(url, {'activation_deadline': past}, format='json')
-        assert response.status_code == 400
+    def test_unbound_semesters_are_unconstrained(self, batch_class):
+        """The 8 semesters created up-front all have session=NULL; MySQL
+        treats NULLs as distinct so they must not collide."""
+        for n in range(1, 9):
+            Semester.objects.create(
+                semester_no=n, status='Inactive', session=None, associated_class=batch_class,
+            )
+        assert Semester.objects.filter(associated_class=batch_class, session__isnull=True).count() == 8
 
-    def test_cannot_activate_semester_when_class_has_active_semester(
-        self, admin_client, batch_class, inactive_semester, active_semester
+    def test_binding_a_second_semester_via_class_patch_returns_400(
+        self, admin_client, batch_class, inactive_semester, academic_session
     ):
-        """If the class already has an Active semester, setting activation_deadline should fail."""
-        # make sure both semesters are linked to same class
-        SemesterDetails.objects.get_or_create(
-            semester=active_semester,
-            defaults={'course': None}
+        """The serializer guard turns the IntegrityError into a clean 400."""
+        other = Semester.objects.create(
+            semester_no=6, status='Inactive', session=None, associated_class=batch_class,
         )
-        url = reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id})
-        future = (timezone.now() + timedelta(days=7)).isoformat()
-        response = admin_client.patch(url, {'activation_deadline': future}, format='json')
-        print(response)
+        url = reverse('Admin:class-detail', kwargs={'class_id': batch_class.class_id})
+        payload = {'scheme_of_studies': [
+            {'semester_id': other.semester_id,
+             'session': academic_session.id,
+             'semesterdetails_set': [{'course': None}]},
+        ]}
+        response = admin_client.patch(url, payload, format='json')
         assert response.status_code == 400
-
-
-@pytest.mark.django_db
-class TestSemesterAPIClosingDeadline:
-
-    def test_closing_deadline_blocked_if_enrollment_has_no_result(
-        self, admin_client, active_semester, course_allocation, enrollment
-    ):
-        """
-        PATCH closing_deadline must return 400 if any enrollment
-        has no course_gpa — results must be complete first.
-        """
-        course_allocation.semester = active_semester
-        course_allocation.save()
-        enrollment.allocation = course_allocation
-        enrollment.save()
-        enrollment.result.course_gpa = None
-        enrollment.result.save()
-
-        url = reverse('Admin:semester-detail', kwargs={'semester_id': active_semester.semester_id})
-        future = (timezone.now() + timedelta(days=30)).isoformat()
-        response = admin_client.patch(url, {'closing_deadline': future}, format='json')
-        assert response.status_code == 400
+        other.refresh_from_db()
+        assert other.session_id is None
 
 
 # ===========================================================================
@@ -328,7 +316,7 @@ class TestEnrollmentAPICreate:
         self, admin_client, student_instance, course_allocation
     ):
         """Enrollment creation should auto-create a Result row."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         response = admin_client.post(f'{ADMIN}/enrollments/', {

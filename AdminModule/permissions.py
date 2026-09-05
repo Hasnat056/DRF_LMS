@@ -62,11 +62,25 @@ class AdminCourseAllocationPermissions(permissions.BasePermission):
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():
-                queryset = Semester.objects.filter(status='Inactive',session__isnull=False, activation_deadline__isnull=False).exists()
-                if queryset:
-                    return request.method in ['GET', 'POST', 'DELETE']
-                else:
-                    return request.method == 'GET'
+                if request.method in permissions.SAFE_METHODS:
+                    return True
+
+                # Setting allocations up is a bulk activity during Initiated.
+                if Semester.objects.filter(
+                    status='Inactive', session__status='Initiated'
+                ).exists():
+                    return request.method in ['POST', 'DELETE']
+
+                # Once enrollment opens the worksheet is closed, but a single
+                # faculty correction is still needed — and DELETE is no longer
+                # possible anyway, since Enrollment.allocation is RESTRICT.
+                # The serializer narrows this to the `faculty` field.
+                if Semester.objects.filter(
+                    status='Inactive', session__status='Available'
+                ).exists():
+                    return request.method in ['PATCH', 'PUT']
+
+                return False
 
             return False
         return False
@@ -75,9 +89,12 @@ class AdminCourseAllocationPermissions(permissions.BasePermission):
         if request.user.is_superuser:
             return True
         if request.user.groups.filter(name='Admin').exists():
-            if obj.status in ['Ongoing', 'Completed',]:
+            if obj.status in ['Active', 'Completed',]:
                 return request.method == 'GET'
-            elif obj.status == 'Inactive':
+            # A locked allocation is not blocked here — the serializer keeps
+            # every field read-only except passing_threshold, so results can be
+            # recalculated under a different cutoff.
+            elif obj.status in ['Inactive', 'Locked']:
                 return True
         return False
 
@@ -89,7 +106,7 @@ class AdminEnrollmentPermissions(permissions.BasePermission):
             if request.user.is_superuser:
                 return True
             if request.user.groups.filter(name='Admin').exists():
-                queryset = CourseAllocation.objects.filter(status='Ongoing').exists()
+                queryset = CourseAllocation.objects.filter(status='Active').exists()
                 if queryset:
                     return True
                 else:
@@ -103,7 +120,9 @@ class AdminEnrollmentPermissions(permissions.BasePermission):
             if request.user.groups.filter(name='Admin').exists():
                 if obj.status in ['Active', 'Inactive', 'Dropped']:
                     return True
-                elif obj.status == 'Completed':
+                # Locked and Completed enrollments are read-only: marks are
+                # frozen and results either exist or are being calculated.
+                elif obj.status in ['Locked', 'Completed']:
                     return request.method == 'GET'
                 return False
             return False

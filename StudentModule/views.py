@@ -1,4 +1,6 @@
 import logging
+
+from django.db.models.query import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, status
@@ -136,7 +138,12 @@ class StudentEnrollmentsListView(
         return Enrollment.objects.filter(
             student__student_id__user=self.request.user,
             allocation__semester__status__in=['Active', 'Completed']
-        ).select_related('result')
+        ).select_related('result', 'allocation').prefetch_related(
+            Prefetch('allocation__assessment_set__assessmentchecked_set',
+                     queryset=AssessmentChecked.objects.filter(
+                         enrollment__student__student_id__user=self.request.user
+                     ),
+                     ))
 
 
 class StudentEnrollmentRetrieveView(
@@ -148,7 +155,7 @@ class StudentEnrollmentRetrieveView(
     def get_queryset(self):
         return Enrollment.objects.filter(
             student__student_id__user=self.request.user
-        ).select_related('result')
+        ).select_related('result', 'allocation')
 
 
 class StudentTranscriptListView(

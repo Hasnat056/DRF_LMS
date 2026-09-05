@@ -36,6 +36,7 @@ urlpatterns =[
     path('classes/<int:class_id>/', ClassRetrieveUpdateAPIView.as_view(), name='class-detail'),
 
     path('allocations/',CourseAllocationListCreateAPIView.as_view()),
+    path('allocations/bulk/', BulkCourseAllocationAPIView.as_view(), name='allocation-bulk'),
     path('allocations/<int:allocation_id>/', CourseAllocationRetrieveUpdateDestroyAPIView.as_view(), name='allocation-detail'),
 
     path('enrollments/', EnrollmentListCreateAPIView.as_view()),

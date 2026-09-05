@@ -54,6 +54,20 @@ jobs:
       CLOUDINARY_API_SECRET: dummy
       CSRF_TRUSTED_ORIGINS: http://localhost
 
+      # settings.py switches the database and both Redis connections to a
+      # separate test stack whenever it detects pytest, so the suite can run
+      # cache.clear() without wiping the dev cache. Those defaults name the
+      # docker-compose hosts (database-test, redis-test), which do not exist
+      # here -- without these overrides every test errors at setup with
+      # "Unknown MySQL server host 'database-test'". Point them at the service
+      # containers above, keeping the same database numbering as local:
+      # 0 cache, 1 pages, 2 broker, 3 results.
+      TEST_DB_HOST: 127.0.0.1
+      TEST_REDIS_URL: redis://127.0.0.1:6379/0
+      TEST_REDIS_URL_PAGES: redis://127.0.0.1:6379/1
+      TEST_CELERY_BROKER_URL: redis://127.0.0.1:6379/2
+      TEST_CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/3
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

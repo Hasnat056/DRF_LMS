@@ -170,12 +170,26 @@ class StudentAssessmentSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         request = self.context.get('request')
         if request:
-            representation['assessmentchecked_set'] = StudentAssessmentCheckedSerializer(
-                instance=
-                instance.assessmentchecked_set.filter(
+            # Both enrollment views prefetch assessmentchecked_set already
+            # scoped to this student. Calling .filter() on the manager throws
+            # that cache away and re-queries once per assessment per
+            # enrollment, which is where most of these endpoints' queries came
+            # from. Read the prefetched rows when they are there.
+            #
+            # The fallback stays as a safety net. A caller that builds this
+            # serializer without that Prefetch -- a new view, or the unit tests
+            # that construct it by hand -- would otherwise get a bare .all(),
+            # which returns every student's row for the assessment rather than
+            # this student's. Failing safe beats failing quietly.
+            if 'assessmentchecked_set' in getattr(instance, '_prefetched_objects_cache', {}):
+                checked = next(iter(instance.assessmentchecked_set.all()), None)
+            else:
+                checked = instance.assessmentchecked_set.filter(
                     assessment=instance.assessment_id,
                     enrollment__student__student_id__user=request.user
-                ).first(), context=self.context
+                ).first()
+            representation['assessmentchecked_set'] = StudentAssessmentCheckedSerializer(
+                instance=checked, context=self.context
             ).data
 
         if not instance.submission_deadline or instance.submission_deadline < timezone.now():
@@ -367,19 +381,34 @@ class StudentAttendanceSerializer(serializers.ModelSerializer):
             }
         return None
 
+    @staticmethod
+    def _attendance_rows(obj):
+        """This enrollment's attendance, restricted to its own allocation.
+
+        Reads the prefetched rows the view supplies rather than querying.
+        get_attendance_details and get_percentage used to build the same
+        queryset separately, and get_percentage then ran it twice more for
+        count() and filter(is_present=True).count() -- 3 queries a row for one
+        query's worth of data.
+
+        Falls back to a query when nothing prefetched attendance_set, so the
+        serializer stays correct on its own.
+        """
+        return [a for a in obj.attendance_set.all()
+                if a.lecture.allocation_id == obj.allocation_id]
+
     @extend_schema_field(AttendanceSerializer(many=True))
     def get_attendance_details(self, obj):
         if obj:
-            attendance = Attendance.objects.filter(enrollment=obj, lecture__allocation=obj.allocation)
-            return AttendanceSerializer(attendance, many=True).data
+            return AttendanceSerializer(self._attendance_rows(obj), many=True).data
         return None
 
 
     def get_percentage(self, obj) -> float:
         if obj:
-            attendance = Attendance.objects.filter(enrollment=obj, lecture__allocation=obj.allocation)
-            total = attendance.count()
-            attended = attendance.filter(is_present=True).count()
+            attendance = self._attendance_rows(obj)
+            total = len(attendance)
+            attended = sum(1 for a in attendance if a.is_present)
             return round((attended / total) * 100) if total else 0
         return 0.0
 

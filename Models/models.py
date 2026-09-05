@@ -211,7 +211,7 @@ class CourseAllocation(models.Model):
         # enrollment window and double-counting its credit hours in
         # transcript GPA.
         unique_together = (('course', 'semester'),)
-        ordering = ['allocation_id', 'faculty', 'semester']
+        ordering = ['allocation_id']
         constraints = [
             CheckConstraint(
                 condition=Q(passing_threshold__gte=30) & Q(passing_threshold__lte=50),
@@ -336,7 +336,7 @@ class Enrollment(models.Model):
     class Meta:
         db_table = 'enrollment'
         unique_together = (('student', 'allocation'),)
-        ordering = ['enrollment_id', 'student', 'allocation',]
+        ordering = ['enrollment_id']
 
     def __str__(self):
         return f"{self.student.student_id}--{self.allocation.allocation_id}"
@@ -462,7 +462,7 @@ class Admin(models.Model):
 
     class Meta:
         db_table = 'Admin'
-        ordering = ['employee_id']
+        ordering = ['pk']
 
     def __str__(self):
         return self.employee_id.person_id
@@ -487,7 +487,7 @@ class Faculty(models.Model):
 
     class Meta:
         db_table = 'Faculty'
-        ordering = ['employee_id', 'department', 'designation']
+        ordering = ['pk']
 
     def __str__(self):
         return self.employee_id.person_id
@@ -516,7 +516,7 @@ class Student(models.Model):
 
     class Meta:
         db_table = 'Student'
-        ordering = ['student_id', 'student_class', 'admission_date']
+        ordering = ['pk']
 
     def __str__(self):
         return f'{self.student_id.person_id}'

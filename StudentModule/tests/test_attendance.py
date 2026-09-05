@@ -3,9 +3,11 @@ test_attendance.py
 -------------------
 Tests for StudentAttendanceListAPIView and StudentAttendanceRetrieveAPIView.
 
-Note: StudentAttendanceSerializer.get_percentage() has a known production bug
-(line 332: `enrollemnt=` typo → FieldError). Tests that exercise get_percentage
-are marked xfail(strict=True).
+Note: this file used to warn that StudentAttendanceSerializer.get_percentage()
+raised FieldError from an `enrollemnt=` typo, and that the tests covering it
+were marked xfail(strict=True). Both are long since untrue -- the typo is gone
+and no xfail markers remain here. get_percentage now counts the prefetched
+attendance rows in Python rather than issuing its own queries.
 """
 import pytest
 from django.urls import reverse

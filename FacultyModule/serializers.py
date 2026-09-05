@@ -585,7 +585,11 @@ class FacultyRequestsSerializer(
         )
 
         user = self.context['request'].user
-        cache_courseAllocation_data_task.delay(user.id)
+        cache_courseAllocation_data_task.delay(
+            user.id,
+            semester_ids=[allocation.semester_id],
+            faculty_ids=[allocation.faculty_id],
+        )
 
         cache.delete(f'faculty:{user.username}:allocations')
         cache.delete(f'faculty:{user.username}:{allocation.allocation_id}:assessments')

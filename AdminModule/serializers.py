@@ -537,9 +537,16 @@ class SchemeOfStudiesField(serializers.Field):
         return obj
 
     def to_representation(self, obj):
-        semester_list = Semester.objects.filter(associated_class=obj.class_id).prefetch_related(
-            'semesterdetails_set__course'
-        )
+        # Read the reverse relation instead of building a fresh queryset. The
+        # old `Semester.objects.filter(associated_class=obj.class_id)` ran once
+        # per class and could not see any prefetch the view had already done --
+        # 3 queries per row, 30 of the 34 on a page of ten.
+        #
+        # Both views that use ClassSerializer prefetch semester_set with its
+        # details and courses. A caller that does not will still get correct
+        # output (the reverse manager is scoped by the FK), just one query per
+        # class and an N+1 on semesterdetails_set.
+        semester_list = obj.semester_set.all()
         semester_serializer_list = []
         for each in semester_list:
             semester_serializer_list.append(SemesterClassSerializer(each, context=self.context).data)

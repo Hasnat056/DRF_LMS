@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny
 
 from .tasks import cache_faculty_data_task, cache_student_data_task, cache_programs_data_task, cache_courses_data_task, \
     cache_semester_data_task, cache_courseAllocation_data_task, cache_enrollment_data_task, \
-    send_result_calculation_confirmation_mail
+    send_result_calculation_confirmation_mail, _semester_cache_queryset
 from .serializers import *
 from .mixins import *
 
@@ -295,7 +295,14 @@ class FacultyListCreateAPIView(
     PersonSerializerMixin,
     generics.ListCreateAPIView
 ):
-    queryset = Faculty.objects.all()
+    # The same prefetching cache_faculty_data_task already feeds this
+    # serializer. Without it a bare page of 10 rows costs 45 queries: person,
+    # user, address and qualifications, once per row. The ?search and
+    # ?ordering paths never consult the cache, so they were the only paths not
+    # getting it — the same fault as StudentListCreateAPIView below.
+    queryset = Faculty.objects.select_related(
+        'employee_id', 'employee_id__user', 'employee_id__address', 'department',
+    ).prefetch_related('employee_id__qualification_set')
     serializer_class = FacultySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['department', 'designation']
@@ -364,8 +371,11 @@ class FacultyListCreateAPIView(
         return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        serializer.save()
-        cache_faculty_data_task.delay(self.request.user.id)
+        instance = serializer.save()
+        cache_faculty_data_task.delay(
+            self.request.user.id,
+            faculty_groups=[(instance.department_id, instance.designation)],
+        )
 
 
 
@@ -386,8 +396,13 @@ class FacultyRetrieveUpdateAPIView(
 
 
     def perform_update(self, serializer):
-        serializer.save()
-        cache_faculty_data_task.delay(self.request.user.id)
+        previous = serializer.instance
+        old_group = (previous.department_id, previous.designation)
+        instance = serializer.save()
+        cache_faculty_data_task.delay(
+            self.request.user.id,
+            faculty_groups=[old_group, (instance.department_id, instance.designation)],
+        )
 
     def destroy(self, request, *args, **kwargs):
        return self.destroy_mixin()
@@ -499,8 +514,14 @@ class StudentListCreateAPIView(
 
 
     def perform_create(self, serializer):
-        serializer.save()
-        cache_student_data_task.delay(self.request.user.id)
+        instance = serializer.save()
+        cache_student_data_task.delay(
+            self.request.user.id,
+            student_groups=[(
+                instance.program.department_id, instance.program_id,
+                instance.student_class_id, instance.status,
+            )],
+        )
 
 
 
@@ -518,8 +539,20 @@ class StudentRetrieveUpdateAPIView(
     target_field_name = 'target_student'
 
     def perform_update(self, serializer):
-        serializer.save()
-        cache_student_data_task.delay(self.request.user.id)
+        previous = serializer.instance
+        old_group = (
+            previous.program.department_id, previous.program_id,
+            previous.student_class_id, previous.status,
+        )
+        instance = serializer.save()
+        new_group = (
+            instance.program.department_id, instance.program_id,
+            instance.student_class_id, instance.status,
+        )
+        cache_student_data_task.delay(
+            self.request.user.id,
+            student_groups=[old_group, new_group],
+        )
 
     def destroy(self, request, *args, **kwargs):
         return self.destroy_mixin()
@@ -724,11 +757,18 @@ class SemesterListAPIView(
     IsSuperUserOrAdminMixin,
     generics.ListAPIView
 ):
-    queryset = Semester.objects.all()
     serializer_class = SemesterSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['associated_class']
-    
+
+    def get_queryset(self):
+        # Shared with cache_semester_data_task so the view and the cache can
+        # never drift apart. Bare, a page of 10 cost 84 queries: 50 x Course
+        # (one per semesterDetails row, for get_course_name), 10 x
+        # semesterDetails, 10 x Class, and 10 x Program because Class.__str__
+        # reads self.program.program_id.
+        return _semester_cache_queryset()
+
     def list(self, request, *args, **kwargs):
         cache_key = 'admin:semesters_list'
         cached_data = cache.get(cache_key)
@@ -773,23 +813,48 @@ class SemesterRetrieveUpdateAPIView(
     lookup_field = 'semester_id'
 
     def perform_update(self, serializer):
-        serializer.save()
-        cache_semester_data_task.delay(self.request.user.id)
+        previous = serializer.instance
+        old_class_id = previous.associated_class_id
+        instance = serializer.save()
+        cache_semester_data_task.delay(
+            self.request.user.id,
+            class_ids=[old_class_id, instance.associated_class_id],
+        )
+
+
+def _class_scheme_queryset():
+    """Classes with everything ClassSerializer's scheme_of_studies needs.
+
+    That field renders each class's semesters, their semesterDetails rows and
+    each row's course. Without this, it re-queried all three per class -- 3
+    queries a row, 30 of the 34 on a page of ten.
+    """
+    return Class.objects.prefetch_related(
+        Prefetch('semester_set', queryset=Semester.objects.prefetch_related(
+            Prefetch('semesterdetails_set',
+                     queryset=SemesterDetails.objects.select_related('course')),
+        )),
+    )
 
 
 class ClassListCreateAPIView(
     IsSuperUserOrAdminMixin,
     generics.ListCreateAPIView
 ):
-    queryset = Class.objects.all()
     serializer_class = ClassSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['program', 'program__department','batch_year']
     search_fields = ['program', 'batch_year']
 
+    def get_queryset(self):
+        return _class_scheme_queryset()
+
     def perform_create(self, serializer):
-        serializer.save()
-        cache_semester_data_task.delay(self.request.user.id)
+        instance = serializer.save()
+        cache_semester_data_task.delay(
+            self.request.user.id,
+            class_ids=[instance.class_id],
+        )
 
 
     
@@ -799,11 +864,13 @@ class ClassRetrieveUpdateAPIView(
     IsSuperUserOrAdminMixin,
     generics.RetrieveUpdateAPIView
 ):
-    queryset = Class.objects.all()
     serializer_class = ClassSerializer
     lookup_field = 'class_id'
     filter_backends = [OrderingFilter]
     ordering_fields = ['semesterdetails__semester__semester_no']
+
+    def get_queryset(self):
+        return _class_scheme_queryset()
 
 
 class CourseAllocationListCreateAPIView (
@@ -838,7 +905,17 @@ class CourseAllocationListCreateAPIView (
             cache_key = f'admin:allocations:semester:{filter_params.get("semester")}' if 'semester' in filter_params else f'admin:allocations:faculty:{filter_params.get("faculty")}'
             data = cache.get(cache_key)
             if data is None:
-                cache_courseAllocation_data_task.delay(self.request.user.id)
+                # Only the single missing key is stale -- no need to rebuild
+                # every semester's and every faculty's allocation list to
+                # answer a filter on one of them.
+                if 'semester' in filter_params:
+                    cache_courseAllocation_data_task.delay(
+                        self.request.user.id, semester_ids=[filter_params['semester']],
+                    )
+                else:
+                    cache_courseAllocation_data_task.delay(
+                        self.request.user.id, faculty_ids=[filter_params['faculty']],
+                    )
                 return super().list(request, *args, **kwargs)
             page = self.paginate_queryset(data)
             if page is not None:
@@ -848,8 +925,12 @@ class CourseAllocationListCreateAPIView (
         return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        serializer.save()
-        cache_courseAllocation_data_task.delay(self.request.user.id)
+        instance = serializer.save()
+        cache_courseAllocation_data_task.delay(
+            self.request.user.id,
+            semester_ids=[instance.semester_id],
+            faculty_ids=[instance.faculty_id],
+        )
 
 
 class BulkCourseAllocationAPIView(
@@ -964,8 +1045,17 @@ class BulkCourseAllocationAPIView(
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data, many=True)
         serializer.is_valid(raise_exception=True)
+        # Every row names its own semester and faculty, so the batch's own
+        # validated rows are exactly the set of keys it touched -- no need to
+        # rebuild every other semester's and faculty's allocation list too.
+        semester_ids = {row['semester'].pk for row in serializer.validated_data}
+        faculty_ids = {row['faculty'].pk for row in serializer.validated_data}
         result = serializer.save()
-        cache_courseAllocation_data_task.delay(request.user.id)
+        cache_courseAllocation_data_task.delay(
+            request.user.id,
+            semester_ids=list(semester_ids),
+            faculty_ids=list(faculty_ids),
+        )
         return Response(result, status=status.HTTP_201_CREATED)
 
 
@@ -986,13 +1076,27 @@ class CourseAllocationRetrieveUpdateDestroyAPIView(
     lookup_field = 'allocation_id'
 
     def perform_update(self, serializer):
-        serializer.save()
-        cache_courseAllocation_data_task.delay(self.request.user.id)
+        # semester is read-only on update (AdminModule/serializers.py), so
+        # only faculty can move -- and only when it does, since that's the one
+        # key an unchanged reassignment wouldn't need touching at all.
+        previous = serializer.instance
+        old_faculty_id = previous.faculty_id
+        instance = serializer.save()
+        cache_courseAllocation_data_task.delay(
+            self.request.user.id,
+            semester_ids=[instance.semester_id],
+            faculty_ids=list({old_faculty_id, instance.faculty_id}),
+        )
 
     def perform_destroy(self, instance):
         semester = instance.semester
+        faculty_id = instance.faculty_id
         instance.delete()
-        cache_courseAllocation_data_task.delay(self.request.user.id)
+        cache_courseAllocation_data_task.delay(
+            self.request.user.id,
+            semester_ids=[semester.semester_id],
+            faculty_ids=[faculty_id],
+        )
         from .tasks import cache_semester_enrollment_data_task
         cache_semester_enrollment_data_task.delay(semester.semester_id)
 
@@ -1005,7 +1109,7 @@ class EnrollmentListCreateAPIView(
 ):
 
     serializer_class = EnrollmentSerializer
-    queryset = Enrollment.objects.all()
+    queryset = Enrollment.objects.select_related('student__student_id', 'result')
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['student','allocation__faculty',

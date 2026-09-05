@@ -22,68 +22,68 @@ This file is regenerated on every run — the analysis lives in
 
 | Endpoint | Role | Queries cold | Queries warm | Cold ms | Fill ms | Warm ms | Verdict |
 |---|---|---:|---:|---:|---:|---:|---|
-| `admin/student-list?search` | admin | 7 | 7 | 292.4 | — | 291.6 | no cache |
-| `admin/student-list` | admin | 7 | 2 | 256.3 | 2396 | 131.4 | cached |
-| `admin/dashboard` | admin | 17 | 2 | 162.6 | — | 7.8 | cached |
-| `admin/student-list?class_` | admin | 7 | 7 | 140.7 | — | 216.9 | no cache |
-| `faculty/lectures` | faculty | 15 | 15 | 124.8 | — | 122.9 | no cache |
-| `admin/student-list?status` | admin | 7 | 2 | 122.2 | 13771 | 138.7 | cached, marginal |
-| `admin/student-list?dept` | admin | 8 | 2 | 76.9 | 3437 | 152.2 | cached, marginal |
-| `student/enrollments` | student | 6 | 6 | 74.8 | — | 67.9 | no cache |
-| `admin/student-list?dept+status` | admin | 8 | 2 | 71.4 | 3804 | 116.1 | cached, marginal |
-| `admin/student-detail` | admin | 30 | 30 | 70.4 | — | 59.8 | no cache |
-| `admin/student-list?program` | admin | 8 | 2 | 62.9 | 7404 | 85.0 | cached, marginal |
-| `admin/allocation-detail` | admin | 11 | 11 | 61.7 | — | 65.7 | no cache |
-| `admin/classes` | admin | 6 | 6 | 61.4 | — | 66.4 | no cache |
-| `admin/enrollments?faculty` | admin | 8 | 3 | 60.0 | 352 | 22.8 | cached |
-| `faculty/allocation-detail` | faculty | 14 | 14 | 55.1 | — | 52.1 | no cache |
-| `admin/allocations-bulk` | admin | 7 | 4 | 51.4 | — | 24.8 | cached |
-| `admin/student-list?student_class` | admin | 8 | 2 | 50.7 | 9599 | 83.8 | cached, marginal |
-| `admin/faculty-list?search` | admin | 6 | 6 | 50.5 | — | 53.6 | no cache |
-| `admin/faculty-list` | admin | 6 | 2 | 49.9 | 47 | 15.1 | cached |
-| `faculty/assessments` | faculty | 10 | 3 | 48.4 | — | 9.6 | cached |
-| `admin/semesters` | admin | 5 | 2 | 47.9 | 25 | 14.6 | cached |
-| `faculty/assessment-detail` | faculty | 11 | 11 | 46.7 | — | 44.6 | no cache |
-| `admin/faculty-list?dept` | admin | 7 | 2 | 45.8 | 169 | 17.0 | cached |
-| `admin/faculty-list?ordering` | admin | 6 | 6 | 45.3 | — | 50.9 | no cache |
-| `admin/faculty-list?dept+desig` | admin | 7 | 2 | 44.4 | 231 | 15.4 | cached |
-| `admin/semesters?class` | admin | 6 | 2 | 43.0 | 126 | 15.4 | cached |
-| `admin/enrollments` | admin | 7 | 7 | 40.1 | — | 39.0 | no cache |
-| `admin/faculty-detail` | admin | 13 | 13 | 38.7 | — | 44.9 | no cache |
-| `student/profile` | student | 13 | 13 | 38.5 | — | 34.0 | no cache |
-| `admin/semester-detail` | admin | 14 | 14 | 38.4 | — | 35.6 | no cache |
-| `admin/allocations?faculty` | admin | 7 | 2 | 37.3 | 1 | 10.8 | cached |
-| `faculty/lecture-detail` | faculty | 9 | 9 | 35.9 | — | 37.2 | no cache |
-| `student/dashboard` | student | 11 | 2 | 34.8 | — | 9.3 | cached |
-| `faculty/allocations` | faculty | 7 | 2 | 33.5 | — | 7.3 | cached |
-| `admin/enrollments?student` | admin | 8 | 3 | 33.2 | 1 | 13.6 | cached |
-| `admin/allocations?semester` | admin | 7 | 2 | 32.0 | 22 | 10.8 | cached |
-| `admin/courses?search` | admin | 5 | 5 | 29.8 | — | 31.2 | no cache |
-| `admin/courses` | admin | 5 | 2 | 29.2 | 44 | 11.7 | cached |
-| `admin/profile` | admin | 8 | 2 | 29.1 | — | 7.5 | cached |
-| `faculty/profile` | faculty | 10 | 2 | 28.5 | — | 6.7 | cached |
-| `admin/allocations?search` | admin | 6 | 6 | 28.4 | — | 26.0 | no cache |
-| `admin/faculty-list?desig` | admin | 6 | 2 | 28.2 | 756 | 15.1 | cached |
-| `admin/class-detail` | admin | 5 | 5 | 26.5 | — | 19.4 | no cache |
-| `student/enrollment-detail` | student | 8 | 8 | 26.4 | — | 26.7 | no cache |
-| `admin/allocations` | admin | 6 | 6 | 25.3 | — | 24.3 | no cache |
-| `faculty/dashboard` | faculty | 5 | 2 | 24.2 | — | 7.2 | cached |
-| `admin/programs?dept` | admin | 5 | 2 | 24.2 | 22 | 10.7 | cached |
-| `admin/enrollment-detail` | admin | 10 | 10 | 23.9 | — | 20.5 | no cache |
-| `admin/transcripts` | admin | 4 | 4 | 22.1 | — | 22.4 | no cache |
-| `student/attendance-detail` | student | 7 | 7 | 21.3 | — | 18.8 | no cache |
-| `admin/programs` | admin | 4 | 2 | 21.1 | 22 | 10.4 | cached |
-| `student/attendance` | student | 5 | 5 | 18.6 | — | 18.4 | no cache |
-| `admin/sessions` | admin | 4 | 4 | 15.9 | — | 11.8 | no cache |
-| `admin/departments` | admin | 4 | 4 | 15.6 | — | 15.9 | no cache |
-| `admin/requests` | admin | 3 | 3 | 15.3 | — | 10.9 | no cache |
-| `admin/session-detail` | admin | 3 | 3 | 14.3 | — | 10.9 | no cache |
-| `admin/department-detail` | admin | 3 | 3 | 13.5 | — | 13.0 | no cache |
-| `admin/program-detail` | admin | 3 | 3 | 13.3 | — | 9.7 | no cache |
-| `admin/course-detail` | admin | 3 | 3 | 10.8 | — | 9.7 | no cache |
-| `student/transcripts` | student | 4 | 4 | 10.2 | — | 10.6 | no cache |
-| `notifications/list` | student | 2 | 2 | 10.2 | — | 10.7 | no cache |
-| `faculty/requests` | faculty | 3 | 3 | 9.8 | — | 10.3 | no cache |
-| `public/current-session` | anon | 1 | 1 | 9.2 | — | 8.7 | no cache |
-| `student/reviews` | student | 3 | 3 | 7.2 | — | 7.2 | no cache |
-| `notifications/unread-count` | student | 2 | 2 | 5.9 | — | 5.9 | no cache |
+| `admin/student-list?search` | admin | 7 | 7 | 100.0 | — | 93.1 | no cache |
+| `admin/student-list` | admin | 7 | 2 | 88.3 | 1007 | 45.0 | cached |
+| `admin/student-list?class_` | admin | 7 | 7 | 81.1 | — | 82.6 | no cache |
+| `admin/dashboard` | admin | 17 | 2 | 51.9 | — | 2.7 | cached |
+| `faculty/lectures` | faculty | 15 | 15 | 45.3 | — | 47.4 | no cache |
+| `admin/student-list?status` | admin | 7 | 2 | 41.0 | 5818 | 55.1 | cached, marginal |
+| `admin/student-list?dept` | admin | 8 | 2 | 30.0 | 1318 | 51.7 | cached, marginal |
+| `admin/student-list?dept+status` | admin | 8 | 2 | 29.7 | 1685 | 55.4 | cached, marginal |
+| `student/enrollments` | student | 6 | 6 | 26.4 | — | 25.0 | no cache |
+| `faculty/allocation-detail` | faculty | 14 | 14 | 24.3 | — | 23.9 | no cache |
+| `admin/student-detail` | admin | 30 | 30 | 23.6 | — | 19.0 | no cache |
+| `admin/allocation-detail` | admin | 11 | 11 | 23.5 | — | 20.5 | no cache |
+| `admin/enrollments?faculty` | admin | 8 | 3 | 22.5 | 150 | 6.6 | cached |
+| `admin/classes` | admin | 6 | 6 | 22.5 | — | 21.7 | no cache |
+| `admin/student-list?program` | admin | 8 | 2 | 21.1 | 3401 | 39.0 | cached, marginal |
+| `admin/allocations-bulk` | admin | 7 | 4 | 19.6 | — | 8.3 | cached |
+| `faculty/assessments` | faculty | 10 | 3 | 18.0 | — | 3.1 | cached |
+| `admin/student-list?student_class` | admin | 8 | 2 | 17.8 | 4300 | 32.6 | cached, marginal |
+| `admin/faculty-list` | admin | 6 | 2 | 17.3 | 22 | 5.6 | cached |
+| `faculty/assessment-detail` | faculty | 11 | 11 | 17.2 | — | 13.7 | no cache |
+| `admin/faculty-list?ordering` | admin | 6 | 6 | 16.7 | — | 17.5 | no cache |
+| `admin/faculty-list?search` | admin | 6 | 6 | 16.3 | — | 15.1 | no cache |
+| `admin/faculty-detail` | admin | 13 | 13 | 16.2 | — | 12.3 | no cache |
+| `faculty/lecture-detail` | faculty | 9 | 9 | 14.6 | — | 12.6 | no cache |
+| `admin/faculty-list?dept` | admin | 7 | 2 | 14.4 | 62 | 5.4 | cached |
+| `admin/enrollments` | admin | 7 | 7 | 14.3 | — | 11.9 | no cache |
+| `admin/semester-detail` | admin | 14 | 14 | 13.9 | — | 13.4 | no cache |
+| `admin/faculty-list?dept+desig` | admin | 7 | 2 | 13.7 | 82 | 5.1 | cached |
+| `admin/semesters` | admin | 5 | 2 | 13.5 | 42 | 4.4 | cached |
+| `admin/semesters?class` | admin | 6 | 2 | 13.3 | 61 | 5.3 | cached |
+| `admin/enrollments?student` | admin | 8 | 3 | 13.3 | 21 | 7.3 | cached |
+| `admin/faculty-list?desig` | admin | 6 | 2 | 13.2 | 287 | 5.2 | cached |
+| `student/profile` | student | 13 | 13 | 12.9 | — | 8.9 | no cache |
+| `admin/allocations?search` | admin | 6 | 6 | 12.3 | — | 11.3 | no cache |
+| `student/enrollment-detail` | student | 8 | 8 | 11.9 | — | 9.4 | no cache |
+| `admin/allocations?faculty` | admin | 7 | 2 | 11.6 | 0 | 3.2 | cached |
+| `faculty/allocations` | faculty | 7 | 2 | 11.3 | — | 3.0 | cached |
+| `admin/allocations?semester` | admin | 7 | 2 | 11.1 | 21 | 7.5 | cached, marginal |
+| `faculty/profile` | faculty | 10 | 2 | 9.9 | — | 2.5 | cached |
+| `admin/courses` | admin | 5 | 2 | 9.7 | 22 | 6.0 | cached, marginal |
+| `admin/programs?dept` | admin | 5 | 2 | 9.4 | 21 | 3.9 | cached |
+| `student/dashboard` | student | 11 | 2 | 9.2 | — | 2.5 | cached |
+| `student/attendance-detail` | student | 7 | 7 | 9.1 | — | 8.6 | no cache |
+| `admin/courses?search` | admin | 5 | 5 | 9.1 | — | 9.2 | no cache |
+| `admin/allocations` | admin | 6 | 6 | 8.9 | — | 8.3 | no cache |
+| `admin/enrollment-detail` | admin | 10 | 10 | 8.7 | — | 7.2 | no cache |
+| `admin/programs` | admin | 4 | 2 | 8.4 | 21 | 4.1 | cached, marginal |
+| `student/attendance` | student | 5 | 5 | 8.4 | — | 7.5 | no cache |
+| `faculty/dashboard` | faculty | 5 | 2 | 8.4 | — | 2.8 | cached |
+| `student/transcripts` | student | 4 | 4 | 6.3 | — | 6.6 | no cache |
+| `admin/transcripts` | admin | 4 | 4 | 6.2 | — | 6.2 | no cache |
+| `admin/class-detail` | admin | 5 | 5 | 6.1 | — | 5.4 | no cache |
+| `admin/sessions` | admin | 4 | 4 | 5.7 | — | 5.8 | no cache |
+| `admin/course-detail` | admin | 3 | 3 | 5.4 | — | 4.6 | no cache |
+| `admin/profile` | admin | 8 | 2 | 5.3 | — | 1.7 | cached, marginal |
+| `admin/requests` | admin | 3 | 3 | 4.7 | — | 4.3 | no cache |
+| `admin/program-detail` | admin | 3 | 3 | 4.3 | — | 4.0 | no cache |
+| `student/reviews` | student | 3 | 3 | 4.2 | — | 3.9 | no cache |
+| `admin/session-detail` | admin | 3 | 3 | 4.1 | — | 3.4 | no cache |
+| `admin/departments` | admin | 4 | 4 | 3.8 | — | 4.0 | no cache |
+| `faculty/requests` | faculty | 3 | 3 | 3.8 | — | 3.6 | no cache |
+| `admin/department-detail` | admin | 3 | 3 | 3.6 | — | 3.6 | no cache |
+| `notifications/list` | student | 2 | 2 | 3.4 | — | 3.6 | no cache |
+| `notifications/unread-count` | student | 2 | 2 | 3.1 | — | 2.5 | no cache |
+| `public/current-session` | anon | 1 | 1 | 2.0 | — | 2.3 | no cache |

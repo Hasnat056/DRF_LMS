@@ -58,7 +58,7 @@ class TestAssessmentSerializerValidation:
         }
 
     def test_valid_assessment_passes(self, faculty_user, course_allocation):
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         data = self._base_data(course_allocation)
         serializer = AssessmentSerializer(
@@ -339,7 +339,7 @@ class TestLectureSerializerValidation:
         self, faculty_user, course_allocation, enrollment, db
     ):
         """Creating a lecture must auto-create Attendance rows for all enrolled students."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation_id = course_allocation
         enrollment.save()
@@ -363,7 +363,7 @@ class TestLectureSerializerValidation:
         self, faculty_user, course_allocation, enrollment, db
     ):
         """Lecture numbers must be sequential starting from 1."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation_id = course_allocation
         enrollment.save()
@@ -399,7 +399,7 @@ class TestLectureSerializerValidation:
         For non-empty dict it would fail on iteration.
         Fix: attendance_set = []
         """
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -449,7 +449,7 @@ class TestFacultyRequestsSerializer:
         self, faculty_user, course_allocation, enrollment, db
     ):
         """A confirmed request should allow status to be updated to 'applied'."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -489,7 +489,7 @@ class TestFacultyRequestsSerializer:
         This means after result calculation is applied, the allocation
         status is set to an invalid value 'Complted' instead of 'Completed'.
         """
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -526,13 +526,9 @@ class TestFacultyRequestsSerializer:
         serializer.save()
 
         course_allocation.refresh_from_db()
-        # document the bug: status is 'Complted' not 'Completed'
-        if course_allocation.status == 'Complted':
-            pytest.xfail(
-                "BUG: allocation.status set to 'Complted' (typo) instead of 'Completed'. "
-                "Fix: change 'Complted' to 'Completed' in FacultyRequestsSerializer.update()"
-            )
-        assert course_allocation.status == 'Completed'
+        # Calculation writes Result rows only — locking is the admin's action
+        # and 'Completed' comes from semester_closing_task.
+        assert course_allocation.status == 'Active'
 
     def test_expired_status_is_applied(self, faculty_user, course_allocation):
         """Sending status='expired' should transition the request to 'expired' and stamp applied_at."""
@@ -548,3 +544,115 @@ class TestFacultyRequestsSerializer:
         result.refresh_from_db()
         assert result.status == 'expired'
         assert result.applied_at is not None
+
+@pytest.mark.django_db
+class TestLockedStatus:
+    """Locking is the admin's action — setting the session's closing_deadline
+    cascades 'Locked' to allocations and enrollments. Assessments freeze with
+    the allocation; obtained marks freeze with the enrollment. Results may
+    still be calculated, and recalculated under a different threshold."""
+
+    def test_assessment_fields_freeze_with_the_allocation(self, course_allocation, assessment):
+        """The assessment's own shape follows the ALLOCATION lock — set when an
+        admin puts a closing_deadline on the session."""
+        course_allocation.status = 'Locked'
+        course_allocation.save()
+        serializer = AssessmentSerializer(instance=assessment)
+        assert serializer.fields['weightage'].read_only is True
+        assert serializer.fields['total_marks'].read_only is True
+
+    def test_assessment_fields_editable_while_active(self, course_allocation, assessment):
+        course_allocation.status = 'Active'
+        course_allocation.save()
+        serializer = AssessmentSerializer(instance=assessment)
+        assert serializer.fields['weightage'].read_only is False
+        assert serializer.fields['total_marks'].read_only is False
+
+    def test_marks_editable_while_enrollment_active(
+        self, course_allocation, assessment, enrollment
+    ):
+        AssessmentChecked.objects.create(
+            assessment=assessment, enrollment=enrollment, obtained=40,
+        )
+        enrollment.status = 'Active'
+        enrollment.save()
+        assessment.refresh_from_db()
+        serializer = AssessmentSerializer(instance=assessment)
+        assert serializer.fields['assessmentchecked_set'].read_only is False
+
+    @pytest.mark.parametrize('locked_status', ['Locked', 'Completed'])
+    def test_marks_freeze_with_the_enrollment(
+        self, course_allocation, assessment, enrollment, locked_status
+    ):
+        """Marks follow the ENROLLMENT lock, not the allocation's."""
+        AssessmentChecked.objects.create(
+            assessment=assessment, enrollment=enrollment, obtained=40,
+        )
+        enrollment.status = locked_status
+        enrollment.save()
+        assessment.refresh_from_db()
+        serializer = AssessmentSerializer(instance=assessment)
+        assert serializer.fields['assessmentchecked_set'].read_only is True
+
+    def test_locked_marks_survive_a_patch(self, course_allocation, assessment, enrollment):
+        """Read-only is only meaningful if update() actually ignores the field."""
+        checked = AssessmentChecked.objects.create(
+            assessment=assessment, enrollment=enrollment, obtained=40,
+        )
+        enrollment.status = 'Locked'
+        enrollment.save()
+        assessment.refresh_from_db()
+
+        serializer = AssessmentSerializer(
+            instance=assessment,
+            data={'assessmentchecked_set': [
+                {'id': checked.id, 'enrollment': enrollment.pk,
+                 'assessment': assessment.pk, 'obtained': 99},
+            ]},
+            partial=True,
+        )
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        checked.refresh_from_db()
+        assert checked.obtained == 40
+
+    def test_result_done_fits_the_status_column(self, course_allocation):
+        """'Locked' is 11 chars; the column was varchar(9) before 0016."""
+        course_allocation.status = 'Locked'
+        course_allocation.save()
+        course_allocation.refresh_from_db()
+        assert course_allocation.status == 'Locked'
+
+
+@pytest.mark.django_db
+class TestFacultyRequestUpdateFallback:
+    """`status` is read-only while a request is pending, so it never reaches
+    validated_data and none of update()'s branches match. Without a fallback
+    return that path yields None, which DRF rejects with a 500."""
+
+    def _pending_request(self, faculty_user, course_allocation):
+        return ChangeRequest.objects.create(
+            change_type='result_calculation',
+            target_allocation=course_allocation,
+            requested_by=faculty_user,
+            status='pending',
+            requested_at=timezone.now(),
+        )
+
+    def test_no_matching_branch_returns_the_instance(self, faculty_user, course_allocation):
+        request = self._pending_request(faculty_user, course_allocation)
+        serializer = FacultyRequestsSerializer(
+            instance=request,
+            data={'status': 'applied'},   # ignored: read-only while pending
+            partial=True,
+            context=_faculty_ctx(faculty_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+
+        result = serializer.save()
+
+        assert result is not None
+        assert result.pk == request.pk
+        request.refresh_from_db()
+        assert request.status == 'pending'   # genuinely a no-op

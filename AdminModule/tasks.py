@@ -9,6 +9,8 @@ from Models.models import *
 from django.core.cache import cache
 from .serializers import FacultySerializer, StudentSerializer, ProgramSerializer, CourseSerializer, SemesterSerializer, \
     CourseAllocationSerializer, EnrollmentSerializer
+from .mixins import ResultCalculationMixin, TranscriptGenerationMixin
+from . import email_service
 
 from django.conf import settings
 from django.http import QueryDict
@@ -60,7 +62,7 @@ def semester_activation_task(semester_id):
     semester.save()
     allocation_count = 0
     for each in semester.courseallocation_set.all():
-        each.status = 'Ongoing'
+        each.status = 'Active'
         for enroll in each.enrollment_set.all():
             enroll.status = 'Active'
             enroll.save()
@@ -75,11 +77,50 @@ def semester_activation_task(semester_id):
 @shared_task
 @transaction.atomic
 def semester_closing_task(semester_id):
+    """Close a semester: settle results, issue transcripts, then cascade.
+
+    The order matters. Transcript generation refuses a semester that is already
+    Completed, and it reads enrollments while they are still Locked — so both
+    must happen before the status cascade, not after.
+
+    Any allocation whose results the faculty never calculated is calculated
+    here, with missing marks counting as zero. By this point marks are frozen
+    and nobody is left who could fill them in, so closing cannot wait.
+    """
     semester = Semester.objects.filter(semester_id=semester_id).prefetch_related(
         'courseallocation_set').prefetch_related('courseallocation_set__enrollment_set').first()
     if not semester:
         logger.warning('semester_closing_task fired for missing semester_id=%s', semester_id)
         return f'Semester {semester_id} has been closed successfully!'
+
+    if semester.status == 'Completed':
+        logger.debug('semester_closing_task: semester_id=%s already closed, no-op', semester_id)
+        return "Semester already closed"
+
+    calculator = ResultCalculationMixin()
+    auto_calculated = []
+    for allocation in semester.courseallocation_set.all():
+        if allocation.enrollment_set.filter(result__course_gpa__isnull=True).exists():
+            calculator.calculate_result(allocation)
+            auto_calculated.append(allocation.allocation_id)
+
+    if auto_calculated:
+        logger.warning(
+            'semester_closing_task: results were not calculated by faculty for '
+            'allocation(s) %s in semester_id=%s — calculated automatically at closing',
+            auto_calculated, semester_id,
+        )
+
+    try:
+        TranscriptGenerationMixin().generate_transcripts(semester)
+    except ValueError as missing:
+        # Results should exist by now; if any are still missing the semester is
+        # left open rather than closed without transcripts.
+        logger.error(
+            'semester_closing_task: cannot close semester_id=%s, results still missing: %s',
+            semester_id, missing.args[0],
+        )
+        raise
 
     semester.status = 'Completed'
     semester.save()
@@ -147,6 +188,123 @@ def session_availability_task(session_id):
 
 
 @shared_task
+@transaction.atomic
+def session_locking_task(session_id):
+    """Freeze a session's coursework once an admin sets its closing_deadline.
+
+    Every Active allocation and enrollment under the session moves to 'Locked':
+    assessments, totals and obtained marks stop moving. Faculty can still
+    calculate results and adjust passing_threshold — that is the point of the
+    locked window. 'Completed' comes later, from semester_closing_task.
+
+    Locking is the admin's action deliberately: it must not depend on whether
+    a teacher ever gets round to calculating results.
+    """
+    session = AcademicSession.objects.filter(id=session_id).first()
+    if not session:
+        logger.warning('session_locking_task fired for missing session_id=%s', session_id)
+        return f'Session {session_id} has been locked'
+
+    allocations = CourseAllocation.objects.filter(
+        semester__session_id=session_id, status='Active'
+    ).update(status='Locked')
+
+    enrollments = Enrollment.objects.filter(
+        allocation__semester__session_id=session_id, status='Active'
+    ).update(status='Locked')
+
+    logger.info(
+        'Session %s locked: %s allocation(s), %s enrollment(s)',
+        session_id, allocations, enrollments,
+    )
+    return f'Session {session_id} has been locked'
+
+
+@shared_task
+def pending_results_reminder_task(session_id, remaining):
+    """Nudge admin and faculty about allocations with no results yet.
+
+    Scheduled at three points before the closing deadline (2 days, 1 day,
+    6 hours). `remaining` is the human phrase used in the subject line.
+    Nothing is calculated here — this only reports.
+    """
+    session = AcademicSession.objects.filter(id=session_id).first()
+    if not session:
+        logger.warning('pending_results_reminder_task fired for missing session_id=%s', session_id)
+        return f'Session {session_id} not found'
+
+    if session.status == 'Completed':
+        logger.debug('pending_results_reminder_task: session_id=%s already closed, no-op', session_id)
+        return 'Session already closed'
+
+    if not session.closing_deadline:
+        # The deadline was cleared after this reminder was scheduled — there is
+        # nothing left to remind anyone about.
+        logger.debug(
+            'pending_results_reminder_task: session_id=%s has no closing_deadline, no-op',
+            session_id,
+        )
+        return 'No closing deadline set'
+
+    pending = []
+    allocations = (
+        CourseAllocation.objects
+        .filter(semester__session_id=session_id)
+        .exclude(status__in=['Completed', 'Cancelled'])
+        .select_related('course', 'semester', 'faculty__employee_id')
+    )
+    for allocation in allocations:
+        missing = allocation.enrollment_set.filter(result__course_gpa__isnull=True).count()
+        if missing:
+            pending.append((allocation, missing))
+
+    if not pending:
+        logger.info('pending_results_reminder_task: session_id=%s has no pending results', session_id)
+        return 'No pending results'
+
+    for allocation, missing in pending:
+        if allocation.faculty.employee_id.institutional_email:
+            email_service.send_pending_results_to_faculty(session, allocation, missing, remaining)
+
+        if allocation.faculty.employee_id.user_id:
+            Notification.objects.create(
+                recipient=allocation.faculty.employee_id.user,
+                verb='result_calculation_pending',
+                message=(
+                    f'{allocation.course.course_code}: {missing} result(s) pending, '
+                    f'session closes in {remaining}.'
+                ),
+                level='action_required',
+                content_type=ContentType.objects.get_for_model(CourseAllocation),
+                object_id=allocation.pk,
+            )
+
+    for admin in Admin.objects.filter(status='Active').select_related('employee_id__user'):
+        if admin.employee_id.institutional_email:
+            email_service.send_pending_results_to_admin(
+                session, pending, admin.employee_id.institutional_email, remaining,
+            )
+        if admin.employee_id.user_id:
+            Notification.objects.create(
+                recipient=admin.employee_id.user,
+                verb='result_calculation_pending',
+                message=(
+                    f'{len(pending)} allocation(s) still without results — '
+                    f'{session} closes in {remaining}.'
+                ),
+                level='action_required',
+                content_type=ContentType.objects.get_for_model(AcademicSession),
+                object_id=session.pk,
+            )
+
+    logger.info(
+        'pending_results_reminder_task: session_id=%s, %s allocation(s) pending, %s left',
+        session_id, len(pending), remaining,
+    )
+    return f'{len(pending)} allocation(s) pending'
+
+
+@shared_task
 def session_closing_task(session_id):
     session = AcademicSession.objects.filter(id=session_id).first()
     if not session:
@@ -180,11 +338,15 @@ def reconcile_lifecycle_states():
     now = timezone.now()
     caught = []
 
-    for semester in Semester.objects.filter(status='Inactive', activation_deadline__lte=now):
+    # Semesters have no deadlines of their own — they follow their session.
+    # A semester still Inactive under an Active session (or still Active under
+    # a Completed one) means the cascade fired but its per-semester task was
+    # lost, so re-fire it. Both tasks are idempotent.
+    for semester in Semester.objects.filter(status='Inactive', session__status='Active'):
         semester_activation_task.delay(semester.semester_id)
         caught.append(f'semester {semester.semester_id} activation')
 
-    for semester in Semester.objects.filter(status='Active', closing_deadline__isnull=False, closing_deadline__lte=now):
+    for semester in Semester.objects.filter(status='Active', session__status='Completed'):
         semester_closing_task.delay(semester.semester_id)
         caught.append(f'semester {semester.semester_id} closing')
 
@@ -490,102 +652,31 @@ def delete_student_task(person_id):
 
 
 # Email Sending tasks
+#
+# These stay here as Celery tasks so their registered names never move — the
+# message wording lives in email_service.py.
 @shared_task
 def send_hod_request_mail(request_id, confirmation_link):
     request = get_object_or_404(ChangeRequest, pk=request_id)
-    faculty = request.new_hod
+    return email_service.send_hod_request(request, confirmation_link)
 
-    send_mail(
-        subject=f"HOD Change Request : {faculty.employee_id}",
-        message=f"Dear {faculty.employee_id.first_name} {faculty.employee_id.last_name},\n"
-                f"You have been requested to appoint as the new Head of Department for the {request.department.department_name}\n"
-                f"If you are willing to uphold this responsibility, please confirm by clicking the link below:\n"
-                f"Confirmation link : {confirmation_link} \n"
-                f"The links will expire in 48 hours.\n"
-
-                f"Thank you,\n"
-                f"NAMAL UNIVERSITY, MAINWALI",
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[faculty.employee_id.institutional_email],
-    )
-    return 'Email sent successfully'
 
 @shared_task
 def send_hod_change_mail(request_id, old_hod_id):
     request = get_object_or_404(ChangeRequest, pk=request_id)
     old_hod = Faculty.objects.filter(pk=old_hod_id).first() if old_hod_id else None
-
-    send_mail(
-        subject=f"HOD Appointment : {request.new_hod}",
-        message=f"Dear {request.new_hod.employee_id.first_name} {request.new_hod.employee_id.last_name},\n"
-                f"Congratulations! You have been appointed as the new Head of Department for the {request.department.department_name}\n"
-                f"Looking forward to your contributions for the welfare of the department\n"
-
-                f"Thank you,\n"
-                f"NAMAL UNIVERSITY, MAINWALI",
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[request.new_hod.employee_id.institutional_email],
-    )
-
-    if old_hod is not None:
-        send_mail(
-            subject=f"HOD Change : {old_hod.employee_id}",
-            message=f"Dear {old_hod.employee_id.first_name} {old_hod.employee_id.last_name},\n"
-                    f"Your position as the Head of department for the {request.department.department_name} has been transferred to Mr. {request.department.HOD.employee_id.first_name} {request.department.HOD.employee_id.last_name}\n"
-                    f"We thankyou for you services and contributions to the welfare of the department \n"
-                    f"Thank you,\n"
-                    f"NAMAL UNIVERSITY, MAINWALI",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[old_hod.employee_id.institutional_email],
-        )
-
-    return 'Emails sent successfully'
+    return email_service.send_hod_appointment(request, old_hod)
 
 
 @shared_task
 def send_result_calculation_confirmation_mail(request_id):
     request = get_object_or_404(ChangeRequest, pk=request_id)
+    return email_service.send_result_calculation_approved(request)
 
-    send_mail(
-        subject=f"Result Calculation Request Approved",
-        message=f"Dear Faculty member,\n"
-                "Your request to calculate the result for the course allocation: \n"
-                f"Course Allocation ID: {request.target_allocation.allocation_id}\n"
-                f"Faculty ID: {request.target_allocation.faculty.employee_id.person_id}\n"
-                f"Faculty Name: {request.target_allocation.faculty.employee_id.first_name} {request.target_allocation.faculty.employee_id.last_name}\n"
-                f"Semester ID: {request.target_allocation.semester_id}\n"
-                f"Session: {request.target_allocation.session}\n"
-                f"has been approved by the admin. Kindly visit your portal to apply changes\n"
-
-
-                f"Thank you,\n"
-                f"NAMAL UNIVERSITY, MAINWALI",
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[request.target_allocation.faculty.employee_id.institutional_email],
-    )
-
-    return 'Emails sent successfully'
 
 @shared_task
-def send_result_calculation_mail(request_id,confirmation_link, recipient_email):
+def send_result_calculation_mail(request_id, confirmation_link, recipient_email):
     request = get_object_or_404(ChangeRequest, pk=request_id)
-    allocation = request.target_allocation
-    send_mail(
-        subject=f"Result Calculation Request : {allocation.allocation_id}",
-        message=f"Dear Admin,\n"
-                "A result calculation request has been made for the course allocation: \n"
-                f"Course Allocation ID: {allocation.allocation_id}\n"
-                f"Faculty ID: {allocation.faculty.employee_id.person_id}\n"
-                f"Faculty Name: {allocation.faculty.employee_id.first_name} {allocation.faculty.employee_id.last_name}\n"
-                f"Semester ID: {allocation.semester.semester_id}\n"
-                f"Session: {allocation.session}\n"
-                f"To approve this request click the link below:\n"
-                f"Confirmation link : {confirmation_link} \n"
-                f"The links will expire in 48 hours.\n"
-
-                f"Thank you,\n"
-                f"NAMAL UNIVERSITY, MAINWALI",
-        from_email=request.requested_by.username,
-        recipient_list=[recipient_email],
+    return email_service.send_result_calculation_request(
+        request, confirmation_link, recipient_email,
     )
-    return 'Emails sent successfully'

@@ -57,7 +57,7 @@ class TestSemesterActivationTask:
         assert course_allocation.status == 'Inactive'
         semester_activation_task.delay(inactive_semester.semester_id)
         course_allocation.refresh_from_db()
-        assert course_allocation.status == 'Ongoing'
+        assert course_allocation.status == 'Active'
 
     def test_cascades_to_enrollments(self, inactive_semester, course_allocation, enrollment):
         """Enrollments must become Active when semester activates."""
@@ -71,14 +71,13 @@ class TestSemesterActivationTask:
     ):
         """
         BUSINESS RULE: Allocations can only be created for Inactive semesters
-        that have session + activation_deadline set.
-        Once the task fires and semester becomes Active, that window must close.
+        whose session is Initiated. Once the task fires and the semester
+        becomes Active, that window must close.
         """
         # Before task — semester is in the eligible queryset
         eligible_before = Semester.objects.filter(
             status='Inactive',
-            session__isnull=False,
-            activation_deadline__isnull=False
+            session__status='Initiated',
         )
         assert inactive_semester in eligible_before
 
@@ -88,8 +87,7 @@ class TestSemesterActivationTask:
         # After task — semester must no longer be in the eligible queryset
         eligible_after = Semester.objects.filter(
             status='Inactive',
-            session__isnull=False,
-            activation_deadline__isnull=False
+            session__status='Initiated',
         )
         assert inactive_semester not in eligible_after
 
@@ -102,14 +100,14 @@ class TestSemesterActivationTask:
         After activation, allocations become Ongoing — enrollment window opens.
         """
         # Before task — allocation is Inactive, not in enrollment-eligible queryset
-        eligible_before = CourseAllocation.objects.filter(status='Ongoing')
+        eligible_before = CourseAllocation.objects.filter(status='Active')
         assert course_allocation not in eligible_before
 
         # Task fires
         semester_activation_task.delay(inactive_semester.semester_id)
 
         # After task — allocation is Ongoing, enrollment window is open
-        eligible_after = CourseAllocation.objects.filter(status='Ongoing')
+        eligible_after = CourseAllocation.objects.filter(status='Active')
         course_allocation.refresh_from_db()
         assert course_allocation in eligible_after
 
@@ -145,7 +143,7 @@ class TestSemesterActivationTask:
         semester_activation_task.delay(inactive_semester.semester_id)
 
         alloc2.refresh_from_db()
-        assert alloc2.status == 'Ongoing'
+        assert alloc2.status == 'Active'
 
     def test_nonexistent_semester_does_not_crash(self):
         """Task called with a non-existent semester_id must not raise an exception."""
@@ -175,7 +173,7 @@ class TestSemesterClosingTask:
     def test_cascades_allocations_to_completed(self, active_semester, course_allocation):
         """Allocations must become Completed when semester closes."""
         course_allocation.semester = active_semester
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         semester_closing_task.delay(active_semester.semester_id)
@@ -187,7 +185,7 @@ class TestSemesterClosingTask:
     ):
         """Enrollments must become Completed when semester closes."""
         course_allocation.semester = active_semester
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -206,17 +204,17 @@ class TestSemesterClosingTask:
         so no new enrollments can be created.
         """
         course_allocation.semester = active_semester
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         # Before close — allocation is Ongoing, enrollment window open
-        assert course_allocation in CourseAllocation.objects.filter(status='Ongoing')
+        assert course_allocation in CourseAllocation.objects.filter(status='Active')
 
         semester_closing_task.delay(active_semester.semester_id)
         course_allocation.refresh_from_db()
 
         # After close — allocation is Completed, enrollment window closed
-        assert course_allocation not in CourseAllocation.objects.filter(status='Ongoing')
+        assert course_allocation not in CourseAllocation.objects.filter(status='Active')
 
     def test_full_lifecycle(self, inactive_semester, course_allocation, enrollment):
         """
@@ -236,7 +234,7 @@ class TestSemesterClosingTask:
         enrollment.refresh_from_db()
 
         assert inactive_semester.status == 'Active'
-        assert course_allocation.status == 'Ongoing'
+        assert course_allocation.status == 'Active'
         assert enrollment.status == 'Active'
 
         # Stage 3: Closing
@@ -518,7 +516,7 @@ class TestSendResultCalculationMails:
     def test_send_result_calculation_mail_calls_send_mail(self, change_request):
         from AdminModule.tasks import send_result_calculation_mail
         from unittest.mock import patch
-        with patch('AdminModule.tasks.send_mail') as mock_mail:
+        with patch('AdminModule.email_service.send_mail') as mock_mail:
             send_result_calculation_mail.delay(
                 change_request.pk,
                 'http://localhost/confirm/abc123/',
@@ -530,7 +528,7 @@ class TestSendResultCalculationMails:
     def test_send_result_calculation_confirmation_mail_calls_send_mail(self, change_request):
         from AdminModule.tasks import send_result_calculation_confirmation_mail
         from unittest.mock import patch
-        with patch('AdminModule.tasks.send_mail') as mock_mail:
+        with patch('AdminModule.email_service.send_mail') as mock_mail:
             send_result_calculation_confirmation_mail.delay(change_request.pk)
         mock_mail.assert_called_once()
 

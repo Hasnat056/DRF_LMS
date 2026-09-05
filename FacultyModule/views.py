@@ -82,7 +82,12 @@ class FacultyDashboardView(
             'institutional_email': faculty.employee_id.institutional_email,
         }
         course_allocation_count = faculty.courseallocation_set.all().count()
-        active_allocations = faculty.courseallocation_set.filter(status='Ongoing').count()
+        # A locked allocation is still the faculty's to finish — results may
+        # not be calculated yet — so it stays on the dashboard as active.
+        # Only 'Completed' moves to history.
+        active_allocations = faculty.courseallocation_set.filter(
+            status__in=['Active', 'Locked']
+        ).count()
         completed_allocations = faculty.courseallocation_set.filter(status='Completed').count()
         allocation_average_success = {}
         for each in faculty.courseallocation_set.filter(status='Completed'):
@@ -158,7 +163,10 @@ class FacultyCourseAllocationView(
 
     serializer_class = get_faculty_allocation_serializer()
     def get_queryset(self):
-        queryset = CourseAllocation.objects.filter(faculty__employee_id__user=self.request.user, status__in=['Ongoing', 'Completed'])
+        queryset = CourseAllocation.objects.filter(
+            faculty__employee_id__user=self.request.user,
+            status__in=['Active', 'Locked', 'Completed'],
+        )
         if queryset.exists():
                 return queryset
         return CourseAllocation.objects.none()

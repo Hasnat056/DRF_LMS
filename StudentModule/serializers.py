@@ -269,7 +269,12 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         )
     )
     def get_result(self, obj):
-        if obj.status != 'Completed':
+        # Gate on the ALLOCATION, not the enrollment. calculate_result marks
+        # enrollments 'Completed' immediately, but the allocation only reaches
+        # 'Completed' when the semester closes — until then the teacher can
+        # recalculate under a different passing_threshold, and a student must
+        # not watch their grade change underneath them.
+        if obj.allocation.status != 'Completed':
             return None
         try:
             result = obj.result

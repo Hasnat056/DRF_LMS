@@ -64,7 +64,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         r = faculty_client.get(f'{FACULTY}/allocations/')
         assert r.status_code == 200
@@ -75,7 +75,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = reverse('Faculty:allocation-detail', kwargs={'allocation_id': course_allocation.allocation_id})
         r = faculty_client.get(url)
@@ -86,7 +86,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -109,7 +109,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -131,7 +131,7 @@ class TestFullFacultyWorkflow:
         assessment, assessment_checked, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -166,7 +166,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -186,7 +186,7 @@ class TestFullFacultyWorkflow:
         self, faculty_client, faculty_instance, course_allocation, lecture, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         att = Attendance.objects.filter(lecture=lecture).first()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
@@ -219,7 +219,7 @@ class TestResultCalculationFlow:
         self, faculty_client, faculty_instance, course_allocation, admin_instance
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = reverse('Faculty:allocation-calculate-result', kwargs={
             'allocation_id': course_allocation.allocation_id
@@ -237,7 +237,7 @@ class TestResultCalculationFlow:
     ):
         """Applying result with null obtained marks must return an error, not crash."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -268,7 +268,7 @@ class TestGradingEdgeCases:
         assessment, assessment_checked, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -312,7 +312,7 @@ class TestAssessmentCacheIntegration:
         self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -346,7 +346,7 @@ class TestFacultyRequestsNoEnrollmentBranch:
     ):
         """No enrollments → status set to declined + 400."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         Enrollment.objects.filter(allocation=course_allocation).delete()
         change_request.status = 'confirmed'
@@ -401,7 +401,7 @@ class TestResultAlreadyCalculatedBranch:
         update() should decline and raise 400.
         """
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'

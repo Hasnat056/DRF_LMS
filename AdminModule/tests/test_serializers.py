@@ -190,79 +190,27 @@ class TestClassSerializerUpdate:
 
 
 # ===========================================================================
-# SemesterSerializer — field guard logic
+# SemesterSerializer — session binding
 # ===========================================================================
 
 @pytest.mark.django_db
-class TestSemesterSerializerFieldGuards:
+class TestSemesterSerializerSessionGuard:
+    """Semesters no longer carry their own deadlines — the old field guards and
+    validators went with them. What remains is that a semester's session is
+    frozen once it is no longer Inactive."""
 
-    def test_activation_deadline_past_becomes_readonly(self, admin_user, batch_class, academic_session):
-        """Once activation_deadline has passed, it should be read-only."""
-        semester = Semester.objects.create(
-            semester_no=1, status='Active', session=academic_session,
-            activation_deadline=timezone.now() - timedelta(hours=1),
-            associated_class=batch_class,
-        )
-        serializer = SemesterSerializer(instance=semester, context=_ctx(admin_user))
-        assert serializer.fields['activation_deadline'].read_only is True
+    def test_session_editable_while_inactive(self, admin_user, inactive_semester):
+        serializer = SemesterSerializer(instance=inactive_semester, context=_ctx(admin_user))
+        assert serializer.fields['session'].read_only is False
 
-    def test_closing_deadline_readonly_before_activation_set(self, admin_user, batch_class):
-        """closing_deadline must be read-only if activation_deadline is not yet set."""
-        semester = Semester.objects.create(semester_no=1, status='Inactive', associated_class=batch_class)
-        serializer = SemesterSerializer(instance=semester, context=_ctx(admin_user))
-        assert serializer.fields['closing_deadline'].read_only is True
+    def test_session_readonly_once_active(self, admin_user, active_semester):
+        serializer = SemesterSerializer(instance=active_semester, context=_ctx(admin_user))
+        assert serializer.fields['session'].read_only is True
 
-    def test_activation_deadline_cannot_be_in_past(self, admin_user, inactive_semester):
-        """Validation should reject an activation_deadline in the past."""
-        data = {'activation_deadline': timezone.now() - timedelta(days=1)}
-        serializer = SemesterSerializer(
-            instance=inactive_semester, data=data,
-            partial=True, context=_ctx(admin_user)
-        )
-        assert not serializer.is_valid()
-        assert 'activation_deadline' in serializer.errors
-
-    def test_closing_deadline_cannot_be_in_past(self, admin_user, batch_class, academic_session):
-        """closing_deadline in the past should fail validation."""
-        semester = Semester.objects.create(
-            semester_no=1, status='Active', session=academic_session,
-            activation_deadline=timezone.now() - timedelta(hours=1),
-            closing_deadline=timezone.now() + timedelta(days=30),
-            associated_class=batch_class,
-        )
-        data = {'closing_deadline': timezone.now() - timedelta(days=1)}
-        serializer = SemesterSerializer(
-            instance=semester, data=data,
-            partial=True, context=_ctx(admin_user)
-        )
-        assert not serializer.is_valid()
-        assert 'closing_deadline' in serializer.errors
-
-    def test_cannot_set_activation_deadline_when_class_has_active_semester(
-        self, admin_user, batch_class, inactive_semester, active_semester
-    ):
-        """
-        Setting activation_deadline on an inactive semester whose class already
-        has an active semester should raise a ValidationError.
-        """
-        # link both semesters to same class
-        SemesterDetails.objects.get_or_create(
-            semester=active_semester,
-            defaults={'course': None}
-        )
-        SemesterDetails.objects.get_or_create(
-            semester=inactive_semester,
-            defaults={'course': None}
-        )
-        data = {'activation_deadline': timezone.now() + timedelta(days=7)}
-        serializer = SemesterSerializer(
-            instance=inactive_semester, data=data,
-            partial=True, context=_ctx(admin_user)
-        )
-        assert serializer.is_valid(), serializer.errors
-        from rest_framework import serializers as drf_serializers
-        with pytest.raises(drf_serializers.ValidationError):
-            serializer.save()
+    def test_deadline_fields_are_gone(self, admin_user, inactive_semester):
+        serializer = SemesterSerializer(instance=inactive_semester, context=_ctx(admin_user))
+        assert 'activation_deadline' not in serializer.fields
+        assert 'closing_deadline' not in serializer.fields
 
 
 # ===========================================================================
@@ -272,14 +220,13 @@ class TestSemesterSerializerFieldGuards:
 @pytest.mark.django_db
 class TestCourseAllocationSerializer:
 
-    def test_semester_queryset_filtered_to_inactive_with_session_and_deadline(
+    def test_semester_queryset_filtered_to_inactive_with_initiated_session(
         self, admin_user, inactive_semester, active_semester
     ):
         """
-        The semester_id field queryset must only include Inactive semesters
-        that have both session and activation_deadline set.
+        The semester field queryset must only include Inactive semesters whose
+        session is Initiated.
         """
-        # inactive_semester fixture has session+activation_deadline set
         serializer = CourseAllocationSerializer(context=_ctx(admin_user))
         qs = serializer.fields['semester'].queryset
         assert inactive_semester in qs
@@ -346,7 +293,7 @@ class TestEnrollmentSerializerQueryset:
         self, admin_user, course_allocation, db
     ):
         """allocation_id field must only show Ongoing allocations."""
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         # Use a different course to avoid the unique_together constraint
@@ -459,6 +406,7 @@ class TestBulkTranscriptSerializer:
         course_allocation.semester_id = active_semester
         course_allocation.save()
         enrollment.allocation_id = course_allocation
+        enrollment.status = 'Locked'
         enrollment.save()
         # result exists but course_gpa is null
         enrollment.result.course_gpa = None
@@ -474,7 +422,7 @@ class TestBulkTranscriptSerializer:
             serializer.save()
         assert enrollment.student.student_id.person_id in str(exc_info.value.detail)
 
-    def test_zero_credits_causes_division_by_zero(
+    def test_zero_credits_skips_the_student_rather_than_aborting(
         self, admin_user, active_semester, student_instance, course_allocation, enrollment, db
     ):
         """
@@ -491,7 +439,9 @@ class TestBulkTranscriptSerializer:
         enrollment.result.course_gpa = Decimal('3.5')
         enrollment.result.save()
 
-        # set course credit_hours to 0 to trigger division by zero
+        # A student whose courses total zero credit hours cannot have a GPA.
+        # They are skipped with a warning rather than aborting the whole batch —
+        # one bad row must not block a semester's transcripts.
         course = course_allocation.course
         course.credit_hours = 0
         course.save()
@@ -501,8 +451,8 @@ class TestBulkTranscriptSerializer:
             context={**_ctx(admin_user), 'semester_id': active_semester.semester_id}
         )
         assert serializer.is_valid(), serializer.errors
-        with pytest.raises(drf_serializers.ValidationError):
-            serializer.save()
+        transcripts = serializer.save()
+        assert transcripts == []
 
 
 # ===========================================================================
@@ -695,7 +645,12 @@ class TestQualificationSerializerValidation:
 
 @pytest.mark.django_db
 class TestResultCalculationMixinAbsolute:
-    """Tests calculate_gpa with < 20 students (absolute grading)."""
+    """Absolute grading (class under 20), per handbook Table 3.
+
+    The cutoffs here previously drifted from the table: five bands sat a few
+    marks low and D+ (54-57.99) was missing altogether, so anyone in that range
+    was awarded 1.00 instead of 1.33.
+    """
 
     def _make_mixin(self):
         from AdminModule.mixins import ResultCalculationMixin
@@ -703,75 +658,38 @@ class TestResultCalculationMixinAbsolute:
             pass
         return Impl()
 
-    def test_score_85_gives_4_0(self, enrollment):
+    @pytest.mark.parametrize('mark,expected', [
+        (100, 4.00), (95, 4.00),    # A+
+        (94, 4.00), (85, 4.00),     # A
+        (84, 3.67), (80, 3.67),     # A-
+        (79, 3.33), (75, 3.33),     # B+
+        (74, 3.00), (71, 3.00),     # B
+        (70, 2.67), (68, 2.67),     # B-
+        (67, 2.33), (64, 2.33),     # C+
+        (63, 2.00), (61, 2.00),     # C
+        (60, 1.67), (58, 1.67),     # C-
+        (57, 1.33), (54, 1.33),     # D+
+        (53, 1.00), (50, 1.00),     # D
+        (49, 0.00), (0, 0.00),      # F
+    ])
+    def test_table_3_bands(self, enrollment, mark, expected):
         mixin = self._make_mixin()
-        enrollment.result.obtained_marks = None
-        enrollment.result.course_gpa = None
-        enrollment.result.save()
-        result = mixin.calculate_gpa({enrollment: 85})
-        from Models.models import Result
+        mixin.calculate_gpa({enrollment: mark})
         enrollment.result.refresh_from_db()
-        assert enrollment.result.course_gpa == 4.0
+        assert float(enrollment.result.course_gpa) == expected
 
-    def test_score_80_gives_3_67(self, enrollment):
+    def test_band_boundaries_are_inclusive_at_the_bottom(self, enrollment):
+        """A mark sitting exactly on a cutoff takes the higher band."""
         mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 80})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 3.67
+        for mark, expected in [(85, 4.00), (71, 3.00), (54, 1.33), (50, 1.00)]:
+            mixin.calculate_gpa({enrollment: mark})
+            enrollment.result.refresh_from_db()
+            assert float(enrollment.result.course_gpa) == expected, mark
 
-    def test_score_75_gives_3_33(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 75})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 3.33
-
-    def test_score_70_gives_3_0(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 70})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 3.0
-
-    def test_score_65_gives_2_67(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 65})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 2.67
-
-    def test_score_61_gives_2_33(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 61})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 2.33
-
-    def test_score_58_gives_2_0(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 58})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 2.0
-
-    def test_score_55_gives_1_67(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 55})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 1.67
-
-    def test_score_50_gives_1_0(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 50})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 1.0
-
-    def test_score_below_50_gives_0_0(self, enrollment):
-        mixin = self._make_mixin()
-        mixin.calculate_gpa({enrollment: 40})
-        enrollment.result.refresh_from_db()
-        assert float(enrollment.result.course_gpa) == 0.0
-
-    def test_calculate_result_marks_enrollment_completed(self, course_allocation, enrollment):
+    def test_calculate_result_leaves_statuses_alone(self, course_allocation, enrollment):
         mixin = self._make_mixin()
         enrollment.result.obtained_marks = None
         enrollment.result.save()
-        # need an assessment and checked entry for calculate_result to work
         from Models.models import Assessment, AssessmentChecked
         assessment = Assessment.objects.create(
             allocation=course_allocation,
@@ -785,9 +703,20 @@ class TestResultCalculationMixinAbsolute:
         AssessmentChecked.objects.create(
             assessment=assessment, enrollment=enrollment, obtained=80
         )
+        before_enrollment = enrollment.status
+        before_allocation = course_allocation.status
+
         mixin.calculate_result(course_allocation)
+
         enrollment.refresh_from_db()
-        assert enrollment.status == 'Completed'
+        course_allocation.refresh_from_db()
+        # Locking is the admin's action (setting closing_deadline) and
+        # 'Completed' comes from semester_closing_task. Calculation only writes
+        # Result rows, which is what makes it safely re-runnable under a
+        # different passing_threshold.
+        assert enrollment.status == before_enrollment
+        assert course_allocation.status == before_allocation
+        assert enrollment.result.course_gpa is not None
 
     def test_calculate_result_with_invalid_instance_returns_message(self, enrollment):
         mixin = self._make_mixin()
@@ -795,7 +724,6 @@ class TestResultCalculationMixinAbsolute:
         assert 'message' in result
 
 
-@pytest.mark.django_db
 class TestResultCalculationMixinBellCurve:
     """Tests calculate_gpa with >= 20 students (bell curve grading)."""
 

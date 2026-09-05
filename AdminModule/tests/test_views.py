@@ -837,9 +837,11 @@ class TestSessionOneLiveGuard:
         AcademicSession.objects.create(period='Fall', year=2026, status=live_status)
         target = AcademicSession.objects.create(period='Spring', year=2027, status='Inactive')
 
-        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=20))
 
         assert r.status_code == 400
+        # must be the one-live-session guard, not a deadline bound
+        assert 'Only one session can be live' in str(r.data)
         target.refresh_from_db()
         assert target.status == 'Inactive'
         assert target.activation_deadline is None
@@ -850,10 +852,10 @@ class TestSessionOneLiveGuard:
         from Models.models import AcademicSession
         target = AcademicSession.objects.create(
             period='Fall', year=2026, status='Initiated',
-            activation_deadline=timezone.now() + timedelta(days=7),
+            activation_deadline=timezone.now() + timedelta(days=16),
         )
 
-        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=20))
 
         assert r.status_code == 200
 
@@ -863,7 +865,7 @@ class TestSessionOneLiveGuard:
         AcademicSession.objects.create(period='Fall', year=2025, status=dormant_status)
         target = AcademicSession.objects.create(period='Spring', year=2027, status='Inactive')
 
-        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=14))
+        r = self._set_deadline(admin_client, target, timezone.now() + timedelta(days=20))
 
         assert r.status_code == 200
         target.refresh_from_db()
@@ -909,35 +911,13 @@ class TestSemesterEndpoints:
         r = admin_client.get(reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id}))
         assert r.status_code == 200
 
-    def test_update_activation_deadline_triggers_task(self, admin_client, inactive_semester):
-        future = timezone.now() + timedelta(days=30)
-        with patch('AdminModule.tasks.semester_activation_task.apply_async') as mock_task, \
-             patch('AdminModule.tasks.cache_semester_enrollment_data_task.delay'):
-            mock_task.return_value.id = 'fake-task-id'
+    def test_update_triggers_cache_task(self, admin_client, inactive_semester):
+        with patch('AdminModule.views.cache_semester_data_task.delay') as mock_delay:
             r = admin_client.patch(
                 reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id}),
-                {'activation_deadline': future.isoformat()}, format='json'
+                {'session': inactive_semester.session_id}, format='json'
             )
         assert r.status_code == 200
-
-    def test_update_activation_deadline_in_past_returns_400(self, admin_client, inactive_semester):
-        past = timezone.now() - timedelta(days=1)
-        r = admin_client.patch(
-            reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id}),
-            {'activation_deadline': past.isoformat()}, format='json'
-        )
-        assert r.status_code == 400
-
-    def test_update_triggers_cache_task(self, admin_client, inactive_semester):
-        future = timezone.now() + timedelta(days=30)
-        with patch('AdminModule.views.cache_semester_data_task.delay') as mock_delay, \
-             patch('AdminModule.tasks.semester_activation_task.apply_async') as mock_task, \
-             patch('AdminModule.tasks.cache_semester_enrollment_data_task.delay'):
-            mock_task.return_value.id = 'fake-task-id'
-            admin_client.patch(
-                reverse('Admin:semester-detail', kwargs={'semester_id': inactive_semester.semester_id}),
-                {'activation_deadline': future.isoformat()}, format='json'
-            )
         mock_delay.assert_called_once()
 
     def test_nonexistent_semester_returns_404(self, admin_client):
@@ -1106,7 +1086,7 @@ class TestEnrollmentEndpoints:
         assert r.status_code == 200
 
     def test_create_enrollment_with_ongoing_allocation(self, admin_client, student_instance, course_allocation):
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         with patch('AdminModule.views.cache_enrollment_data_task.delay'):
             r = admin_client.post(f'{ADMIN}/enrollments/', {
@@ -1116,7 +1096,7 @@ class TestEnrollmentEndpoints:
         assert r.status_code == 201
 
     def test_create_triggers_cache_task(self, admin_client, student_instance, course_allocation):
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         with patch('AdminModule.views.cache_enrollment_data_task.delay') as mock_delay:
             admin_client.post(f'{ADMIN}/enrollments/', {
@@ -1132,7 +1112,7 @@ class TestEnrollmentEndpoints:
         assert r.status_code == 200
 
     def test_update_enrollment_triggers_cache_task(self, admin_client, enrollment):
-        enrollment.allocation.status = 'Ongoing'
+        enrollment.allocation.status = 'Active'
         enrollment.allocation.save()
         with patch('AdminModule.views.cache_enrollment_data_task.delay') as mock_delay:
             admin_client.patch(
@@ -1142,7 +1122,7 @@ class TestEnrollmentEndpoints:
         mock_delay.assert_called_once()
 
     def test_delete_enrollment_without_gpa_succeeds(self, admin_client, enrollment):
-        enrollment.allocation.status = 'Ongoing'
+        enrollment.allocation.status = 'Active'
         enrollment.allocation.save()
         assert enrollment.result.course_gpa is None
         with patch('AdminModule.views.cache_enrollment_data_task.delay'):
@@ -1196,7 +1176,9 @@ class TestTranscriptEndpoints:
         course_allocation.status = 'Completed'
         course_allocation.save()
         enrollment.allocation = course_allocation
-        enrollment.status = 'Completed'
+        # Transcripts are generated while enrollments are Locked — before the
+        # closing cascade marks them Completed.
+        enrollment.status = 'Locked'
         enrollment.save()
         enrollment.result.course_gpa = None
         enrollment.result.save()

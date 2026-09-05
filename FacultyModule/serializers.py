@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta, datetime
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.shortcuts import get_list_or_404
@@ -151,17 +152,34 @@ class AssessmentSerializer(serializers.ModelSerializer):
     def get_extra_kwargs(self):
         extra_kwargs = super().get_extra_kwargs()
         if isinstance(self.instance, Assessment):
-            is_completed = self.instance.allocation.status == 'Completed'
+            # The assessment's own shape freezes with its allocation: once an
+            # admin sets the session's closing_deadline the allocation locks,
+            # and its weightages and totals can no longer move.
+            is_completed = self.instance.allocation.status in ['Locked', 'Completed']
             read_only_fields = [
                 'assessment_type', 'assessment_name', 'assessment_date',
                 'weightage', 'total_marks', 'student_submission',
-                'submission_deadline', 'assessmentchecked_set',
+                'submission_deadline',
             ]
             for field in read_only_fields:
                 extra_kwargs[field] = {'read_only': is_completed}
             extra_kwargs['allocation'] = {'read_only': True}
 
         return extra_kwargs
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # `assessmentchecked_set` is a declared field, and DRF only applies
+        # extra_kwargs to fields it builds from the model — so the lock has to
+        # be set here rather than in get_extra_kwargs, where it is ignored.
+        # Marks follow the ENROLLMENT lock, not the allocation's: a locked
+        # enrollment's obtained marks are frozen, since editing them after
+        # results are calculated would drift from the stored Result.
+        if isinstance(self.instance, Assessment) and self.instance.assessmentchecked_set.filter(
+            enrollment__status__in=['Locked', 'Completed']
+        ).exists():
+            fields['assessmentchecked_set'].read_only = True
+        return fields
 
 
 
@@ -533,13 +551,53 @@ class FacultyRequestsSerializer(
             if data:
                 raise serializers.ValidationError(data)
 
+            # Statuses are not touched here. Locking is the admin's action
+            # (setting the session's closing_deadline) and 'Completed' comes
+            # from semester_closing_task — calculation only writes Result rows,
+            # so it can be re-run under a different passing_threshold.
             result_data = self.calculate_result(allocation)
             instance.status = 'applied'
             instance.applied_at = timezone.now()
-            allocation.status = 'Completed'
-            allocation.save()
             instance.save()
 
+            self._invalidate_result_caches(allocation)
+
             return instance
+
+        # No status transition applied — `status` is read-only while a request
+        # is pending, so it never reaches validated_data and none of the
+        # branches above match. Returning the untouched instance keeps this a
+        # no-op; falling off the end would return None, which DRF rejects with
+        # "update() did not return an object instance" and a 500.
+        return super().update(instance, validated_data)
+
+    def _invalidate_result_caches(self, allocation):
+        """Results have changed, so every cached view of them is now wrong.
+
+        Two mechanisms, so two treatments: the admin lists are populated by
+        Celery tasks and get re-fired, while the faculty and student keys are
+        filled lazily by their views on the next read and only need clearing.
+        Nothing was invalidated here before, leaving stale grades visible for
+        the length of each key's TTL.
+        """
+        from AdminModule.tasks import (
+            cache_courseAllocation_data_task, cache_enrollment_data_task,
+        )
+
+        user = self.context['request'].user
+        cache_courseAllocation_data_task.delay(user.id)
+        cache_enrollment_data_task.delay(user.id)
+
+        cache.delete(f'faculty:{user.username}:allocations')
+        cache.delete(f'faculty:{user.username}:{allocation.allocation_id}:assessments')
+
+        # Each student's dashboard counts enrollments by status.
+        enrollments = allocation.enrollment_set.select_related(
+            'student__student_id__user'
+        )
+        for enrollment in enrollments:
+            student_user = enrollment.student.student_id.user
+            if student_user:
+                cache.delete(f'student:dashboard:{student_user.username}')
 
 

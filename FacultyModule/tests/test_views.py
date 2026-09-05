@@ -145,7 +145,7 @@ class TestFacultyCourseAllocationView:
     ):
         """Faculty must only see their own allocations."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         response = faculty_client.get(f'{FACULTY}/allocations/')
@@ -170,7 +170,7 @@ class TestFacultyCourseAllocationView:
         self, faculty_client, faculty_instance, course_allocation, db
     ):
         """Only Ongoing and Completed allocations must be returned."""
-        for status_val in ['Ongoing', 'Completed']:
+        for status_val in ['Active', 'Completed']:
             course_allocation.faculty = faculty_instance
             course_allocation.status = status_val
             course_allocation.save()
@@ -181,7 +181,7 @@ class TestFacultyCourseAllocationView:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         url = reverse('Faculty:allocation-detail', kwargs={
@@ -236,7 +236,7 @@ class TestAssessmentAPI:
 
     def test_faculty_can_list_assessments(self, faculty_client, faculty_instance, course_allocation):
         course_allocation.teacher_id = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/'
@@ -247,7 +247,7 @@ class TestAssessmentAPI:
             self, faculty_client, faculty_instance, course_allocation, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -270,7 +270,7 @@ class TestAssessmentAPI:
     ):
         """Creating an assessment must auto-create AssessmentChecked for all enrollments."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -295,7 +295,7 @@ class TestAssessmentAPI:
     ):
         from Models.models import Notification
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -323,7 +323,7 @@ class TestAssessmentAPI:
     ):
         from Models.models import Notification
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'
@@ -385,7 +385,7 @@ class TestLectureAPI:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/'
@@ -397,7 +397,7 @@ class TestLectureAPI:
     ):
         """Creating a lecture must auto-create Attendance for all enrolled students."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.save()
@@ -443,7 +443,7 @@ class TestResultCalculationRequest:
             db
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         url = reverse('Faculty:allocation-calculate-result', kwargs={
@@ -591,7 +591,7 @@ class TestFacultyAllocationCacheBranches:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         # prime the cache
         faculty_client.get(f'{FACULTY}/allocations/')
@@ -605,7 +605,7 @@ class TestFacultyAllocationCacheBranches:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         faculty_client.get(f'{FACULTY}/allocations/')  # prime cache
         r = faculty_client.get(f'{FACULTY}/allocations/?status=Completed')
@@ -617,7 +617,7 @@ class TestFacultyAllocationCacheBranches:
         """Cold cache (paginated response) and warm cache (cached response) must
         return the same paginated envelope shape, not a bare array on cache hit."""
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
 
         cold = faculty_client.get(f'{FACULTY}/allocations/')
@@ -633,7 +633,7 @@ class TestFacultyAllocationCacheBranches:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         faculty_client.get(f'{FACULTY}/allocations/')  # prime cache (paginated envelope)
 
@@ -647,7 +647,7 @@ class TestFacultyAllocationCacheBranches:
         self, faculty_client, faculty_instance, course_allocation
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = reverse('Faculty:allocation-detail', kwargs={'allocation_id': course_allocation.allocation_id})
         r = faculty_client.get(url)
@@ -669,7 +669,7 @@ class TestAssessmentRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, assessment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
         r = faculty_client.get(url)
@@ -679,7 +679,7 @@ class TestAssessmentRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, assessment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
         r = faculty_client.patch(url, {
@@ -696,7 +696,7 @@ class TestAssessmentRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, assessment, assessment_checked
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/assessments/{assessment.assessment_id}/'
         r = faculty_client.delete(url)
@@ -783,7 +783,7 @@ class TestLectureRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, lecture
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
         r = faculty_client.get(url)
@@ -793,7 +793,7 @@ class TestLectureRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, lecture, enrollment
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
         r = faculty_client.patch(url, {
@@ -815,7 +815,7 @@ class TestLectureRetrieveUpdateDestroy:
         self, faculty_client, faculty_instance, course_allocation, lecture
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         url = f'{FACULTY}/allocations/{course_allocation.allocation_id}/lectures/{lecture.lecture_id}/'
         r = faculty_client.delete(url)
@@ -913,7 +913,7 @@ class TestFacultyRequestsUpdateView:
         assessment, assessment_checked, change_request
     ):
         course_allocation.faculty = faculty_instance
-        course_allocation.status = 'Ongoing'
+        course_allocation.status = 'Active'
         course_allocation.save()
         enrollment.allocation = course_allocation
         enrollment.status = 'Active'

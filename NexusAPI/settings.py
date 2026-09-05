@@ -189,6 +189,9 @@ REST_FRAMEWORK = {
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 
+    # Turns MySQL trigger rejections (SIGNAL 1644) into 400s instead of 500s.
+    'EXCEPTION_HANDLER': 'NexusAPI.exception_handlers.api_exception_handler',
+
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',

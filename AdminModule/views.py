@@ -1,5 +1,5 @@
 import logging
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.db.models.functions import ExtractYear
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
@@ -416,7 +416,7 @@ class StudentListCreateAPIView(
                     return super().list(request, *args, **kwargs)
 
             if 'program' in filter_params and len(filter_params)==1:
-                cache_key = f'admin:students:program:{query_params.get("program_id")}'
+                cache_key = f'admin:students:program:{query_params.get("program")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -437,8 +437,8 @@ class StudentListCreateAPIView(
                     return self.get_paginated_response(page)
                 return Response(data, status=status.HTTP_200_OK)
 
-            if 'class_' in filter_params and len(filter_params)==1:
-                cache_key = f'admin:students:class:{query_params.get("class_")}'
+            if 'student_class' in filter_params and len(filter_params)==1:
+                cache_key = f'admin:students:class:{query_params.get("student_class")}'
                 data = cache.get(cache_key)
                 if data is None:
                     return super().list(request, *args, **kwargs)
@@ -811,6 +811,122 @@ class CourseAllocationListCreateAPIView (
         cache_courseAllocation_data_task.delay(self.request.user.id)
 
 
+class BulkCourseAllocationAPIView(
+    IsSuperUserOrAdminMixin,
+    APIView
+):
+    """The allocation worksheet for the live session.
+
+    GET  — every class with a semester bound to the session, its scheme of
+           studies, and who each course is currently allocated to. A null
+           `allocation_id` marks a course still needing a teacher, which is
+           what makes the screen safe to come back to.
+    POST — batch create/update. See BulkCourseAllocationListSerializer for the
+           per-phase rules.
+    """
+    serializer_class = BulkCourseAllocationSerializer
+
+    LIVE_STATUSES = ['Initiated', 'Available']
+
+    def _resolve_session(self, request):
+        session_id = request.query_params.get('session')
+        if session_id:
+            return AcademicSession.objects.filter(id=session_id).first()
+        # Only one session can be live at a time, so this is unambiguous.
+        return AcademicSession.objects.filter(status__in=self.LIVE_STATUSES).first()
+
+    def get(self, request, *args, **kwargs):
+        session = self._resolve_session(request)
+        if not session:
+            return Response(
+                {'session': None, 'classes': []}, status=status.HTTP_200_OK
+            )
+
+        # The worksheet is two kinds of data with very different lifetimes. The
+        # class/semester/course skeleton comes from the scheme of studies and
+        # barely moves once a session is initiated, but it carries the
+        # expensive joins. Who each course is allocated to changes on every
+        # POST. Caching them together would throw away the expensive half on
+        # every write, so only the skeleton is cached and allocations are read
+        # live.
+        cache_key = f'admin:{session.id}:allocations:bulk'
+        skeleton = cache.get(cache_key)
+        if skeleton is None:
+            skeleton = self._build_skeleton(session)
+            cache.set(cache_key, skeleton, timeout=60 * 10)
+
+        allocations = {
+            (a.semester_id, a.course_id): a
+            for a in CourseAllocation.objects
+            .filter(semester__session=session)
+            .select_related('faculty__employee_id')
+        }
+
+        classes = []
+        for entry in skeleton:
+            courses = []
+            for course in entry['courses']:
+                allocation = allocations.get((entry['semester_id'], course['course_code']))
+                courses.append({
+                    **course,
+                    'allocation_id': allocation.allocation_id if allocation else None,
+                    'faculty': {
+                        'employee_id': allocation.faculty.employee_id.person_id,
+                        'name': f'{allocation.faculty.employee_id.first_name} '
+                                f'{allocation.faculty.employee_id.last_name}',
+                    } if allocation else None,
+                })
+            classes.append({**entry, 'courses': courses})
+
+        return Response({
+            'session': {
+                'id': session.id,
+                'period': session.period,
+                'year': session.year,
+                'status': session.status,
+            },
+            'classes': classes,
+        }, status=status.HTTP_200_OK)
+
+    def _build_skeleton(self, session):
+        """Classes, their semester for this session, and the courses each is
+        scheduled to run. No allocation data — that is read live."""
+        semesters = (
+            Semester.objects
+            .filter(session=session, status='Inactive')
+            .select_related('associated_class__program')
+            .prefetch_related('semesterdetails_set__course')
+            .order_by('associated_class__program', 'associated_class__batch_year')
+        )
+
+        skeleton = []
+        for semester in semesters:
+            courses = [
+                {
+                    'course_code': detail.course.course_code,
+                    'course_name': detail.course.course_name,
+                    'credit_hours': detail.course.credit_hours,
+                    'lab': detail.course.lab,
+                }
+                for detail in semester.semesterdetails_set.all()
+                if detail.course is not None   # placeholder row from class creation
+            ]
+            skeleton.append({
+                'class_id': semester.associated_class_id,
+                'class': str(semester.associated_class),
+                'semester_id': semester.semester_id,
+                'semester_no': semester.semester_no,
+                'courses': courses,
+            })
+        return skeleton
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+        cache_courseAllocation_data_task.delay(request.user.id)
+        return Response(result, status=status.HTTP_201_CREATED)
+
 
 class CourseAllocationRetrieveUpdateDestroyAPIView(
     AdminCourseAllocationPermissionMixin,
@@ -922,8 +1038,13 @@ class TranscriptBulkCreateAPIView(
             semester_id = kwargs.get('semester_id')
             serializer = self.serializer_class(data=request.data, context={'semester_id': semester_id})
             if serializer.is_valid():
-                instance = serializer.save()
-                return Response(instance.data, status=status.HTTP_201_CREATED)
+                transcripts = serializer.save()
+                # bulk_create returns a plain list, which has no `.data` —
+                # serialize it before responding.
+                return Response(
+                    TranscriptSerializer(transcripts, many=True).data,
+                    status=status.HTTP_201_CREATED,
+                )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response(status=status.HTTP_401_UNAUTHORIZED)
 

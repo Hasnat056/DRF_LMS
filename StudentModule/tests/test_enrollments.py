@@ -130,35 +130,55 @@ class TestEnrollmentRetrieve:
 
 @pytest.mark.django_db
 class TestEnrollmentResult:
-    """result is only surfaced once the enrollment is Completed, gating
-    in-progress marks/GPA from students until faculty finalize them."""
+    """result is gated on the ALLOCATION reaching 'Completed', not the
+    enrollment. calculate_result marks enrollments 'Completed' straight away
+    but leaves the allocation at 'Locked', where the teacher can still
+    recalculate under a different passing_threshold — a student must not see a
+    grade that can still move."""
 
-    def test_result_is_null_for_active_enrollment(self, student_client, active_enrollment):
+    def test_result_hidden_while_allocation_ongoing(self, student_client, active_enrollment):
         url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
         r = student_client.get(url)
         assert r.status_code == 200
         assert r.data['result'] is None
 
-    def test_result_blank_when_completed_but_not_yet_calculated(
+    def test_result_hidden_at_result_done_even_with_marks(
         self, student_client, active_enrollment
     ):
-        """enrollment fixture already creates a blank Result row (mirrors
-        AdminModule's enrollment-creation flow) — gating only hides it
-        pre-Completed, it doesn't require marks to already be filled in."""
+        """The key case: results exist and the enrollment is 'Completed', but
+        the allocation is only 'Locked' — still recalculable."""
+        from Models.models import Result
+        from decimal import Decimal
         active_enrollment.status = 'Completed'
         active_enrollment.save()
+        active_enrollment.allocation.status = 'Locked'
+        active_enrollment.allocation.save()
+        Result.objects.filter(enrollment=active_enrollment).update(
+            course_gpa=Decimal('3.50'), obtained_marks=Decimal('88.00')
+        )
+
+        url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
+        r = student_client.get(url)
+        assert r.status_code == 200
+        assert r.data['result'] is None
+
+    def test_result_blank_when_allocation_completed_but_not_calculated(
+        self, student_client, active_enrollment
+    ):
+        active_enrollment.allocation.status = 'Completed'
+        active_enrollment.allocation.save()
         url = reverse('Student:enrollment-detail', kwargs={'enrollment_id': active_enrollment.enrollment_id})
         r = student_client.get(url)
         assert r.status_code == 200
         assert r.data['result'] == {'course_gpa': None, 'obtained_marks': None}
 
-    def test_result_visible_once_completed_and_calculated(
+    def test_result_visible_once_allocation_completed(
         self, student_client, active_enrollment
     ):
         from Models.models import Result
         from decimal import Decimal
-        active_enrollment.status = 'Completed'
-        active_enrollment.save()
+        active_enrollment.allocation.status = 'Completed'
+        active_enrollment.allocation.save()
         Result.objects.filter(enrollment=active_enrollment).update(
             course_gpa=Decimal('3.50'), obtained_marks=Decimal('88.00')
         )

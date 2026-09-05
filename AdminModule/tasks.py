@@ -571,37 +571,86 @@ def cache_courseAllocation_data_task(user_id):
     return 'Course Allocation data has been cached successfully'
 
 
+# EnrollmentSerializer reads obj.student.student_id (Student, then Person) and
+# obj.result on every row. Without this the rebuild runs that lookup 75,000
+# times.
+def _enrollment_cache_queryset():
+    return Enrollment.objects.select_related(
+        'student__student_id', 'allocation__faculty', 'result'
+    )
+
+
+def _cache_enrollments_for(cache_key, enrollments, context):
+    """Write one enrollment list to one key.
+
+    No cache.delete() first: deleting leaves the key *absent* for the length of
+    the rebuild, so every reader falls through to the database. Writing over it
+    keeps the old value readable until the new one lands.
+
+    An empty result is cached as [], not deleted. Empty is the true answer for
+    a student with no enrollments left, and the view treats only None as a
+    miss -- so deleting the key would make every later read miss and fire
+    another rebuild.
+    """
+    serializer = EnrollmentSerializer(enrollments, context=context, many=True)
+    cache.set(cache_key, serializer.data, timeout=60*10)
+
+
 @shared_task
-def cache_enrollment_data_task(user_id):
+def cache_enrollment_data_task(user_id, student_ids=None, faculty_ids=None):
+    """Rebuild the admin enrollment caches.
+
+    With neither id list given this rebuilds every key -- all 75,000
+    enrollments, serialised twice, into about 5,200 keys. That was the only
+    behaviour, and it ran on every create, update and delete, so one student
+    enrolling in one course rebuilt the cache for every student and every
+    teacher in the system. Measured, the fill never finished inside 60
+    seconds: it cost three CPU cores for minutes and returned nothing usable.
+
+    One enrollment changing affects exactly two keys, so the write paths now
+    name them. The full rebuild stays for callers that genuinely want it.
+
+    `user_id` scopes nothing -- it only builds absolute URLs in the serializer.
+    """
     user = User.objects.get(id=user_id)
     custom_request = CustomRequest(user, method='GET')
     context = {'request': custom_request}
 
-    queryset = Enrollment.objects.all()
-    student_based_queryset = queryset.order_by('student')
+    queryset = _enrollment_cache_queryset()
 
-    student_distributed_data = {
-        student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student)
-    }
+    if student_ids is None and faculty_ids is None:
+        student_based_queryset = queryset.order_by('student')
+        student_distributed_data = {
+            student_id : list(items) for student_id, items in groupby(student_based_queryset, key=lambda x : x.student)
+        }
+        for key, value in student_distributed_data.items():
+            _cache_enrollments_for(f'admin:enrollments:student:{key}', value, context)
 
-    for key, value in student_distributed_data.items():
-        cache_key = f'admin:enrollments:student:{key}'
-        cache.delete(cache_key)
-        serializer = EnrollmentSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60*10)
+        faculty_based_queryset = queryset.order_by('allocation__faculty')
+        faculty_distributed_data = {
+            teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation.faculty)
+        }
+        for key, value in faculty_distributed_data.items():
+            _cache_enrollments_for(f'admin:enrollments:faculty:{key}', value, context)
 
+        return 'Enrollment data has been cached successfully'
 
-    faculty_based_queryset = queryset.order_by('allocation__faculty')
-    faculty_distributed_data = {
+    # str(Student) and str(Faculty) both return person_id, which is also the
+    # primary key the view reads out of the query param -- so the ids passed in
+    # produce byte-identical key names to the full rebuild above.
+    for student_id in dict.fromkeys(student_ids or ()):
+        _cache_enrollments_for(
+            f'admin:enrollments:student:{student_id}',
+            queryset.filter(student=student_id),
+            context,
+        )
 
-        teacher_id : list(items) for teacher_id, items in groupby(faculty_based_queryset, key=lambda x : x.allocation.faculty)
-    }
-
-    for key, value in faculty_distributed_data.items():
-        cache_key = f'admin:enrollments:faculty:{key}'
-        cache.delete(cache_key)
-        serializer = EnrollmentSerializer(value, context=context, many=True)
-        cache.set(cache_key, serializer.data, timeout=60 *10)
+    for faculty_id in dict.fromkeys(faculty_ids or ()):
+        _cache_enrollments_for(
+            f'admin:enrollments:faculty:{faculty_id}',
+            queryset.filter(allocation__faculty=faculty_id),
+            context,
+        )
 
     return 'Enrollment data has been cached successfully'
 

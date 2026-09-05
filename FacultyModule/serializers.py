@@ -586,7 +586,6 @@ class FacultyRequestsSerializer(
 
         user = self.context['request'].user
         cache_courseAllocation_data_task.delay(user.id)
-        cache_enrollment_data_task.delay(user.id)
 
         cache.delete(f'faculty:{user.username}:allocations')
         cache.delete(f'faculty:{user.username}:{allocation.allocation_id}:assessments')
@@ -595,9 +594,20 @@ class FacultyRequestsSerializer(
         enrollments = allocation.enrollment_set.select_related(
             'student__student_id__user'
         )
+        student_ids = []
         for enrollment in enrollments:
+            student_ids.append(enrollment.student_id)
             student_user = enrollment.student.student_id.user
             if student_user:
                 cache.delete(f'student:dashboard:{student_user.username}')
+
+        # Only this allocation's students and its one teacher are affected, so
+        # only their keys are rebuilt. This used to rebuild every enrollment
+        # key in the system.
+        cache_enrollment_data_task.delay(
+            user.id,
+            student_ids=student_ids,
+            faculty_ids=[allocation.faculty_id],
+        )
 
 

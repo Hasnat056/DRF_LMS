@@ -1,6 +1,6 @@
 import logging
-from django.db.models import Count, Prefetch
-from django.db.models.functions import ExtractYear
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, Subquery
+from django.db.models.functions import Coalesce, ExtractYear
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -174,14 +174,42 @@ class AdminDashboardAPIView(
             .annotate(count=Count('student'))
         ))
 
+        # Three independent one-to-many joins hung off one table: MySQL builds
+        # their cartesian product — students x faculty x programs per
+        # department — and COUNT(DISTINCT) then de-duplicates it. At 1,000
+        # students and 40 faculty per department that is a 40,000-row
+        # intermediate per department, for three individually trivial numbers.
+        # It measured 7,179 ms of this view's 8,455 ms.
+        #
+        # A correlated subquery per relation counts each on its own index. The
+        # fourth annotation, enrollment_count, is gone: it was never in the
+        # values() output, so it was computed (over 75,000 rows) and discarded.
+        def _per_department(queryset, path):
+            return Coalesce(
+                Subquery(
+                    queryset.filter(**{path: OuterRef('pk')})
+                    # order_by() strips any Meta ordering, which would
+                    # otherwise be dragged into the GROUP BY.
+                    .order_by()
+                    .values(path)
+                    .annotate(total=Count('pk'))
+                    .values('total'),
+                    output_field=IntegerField(),
+                ),
+                0,
+            )
+
         departments_data = list((
             Department.objects
             .annotate(
-                student_count=Count('program__student', distinct=True),
-                faculty_count=Count('faculty', distinct=True),
-                program_count=Count('program', distinct=True),
-                enrollment_count=Count('program__student__enrollment', distinct=True),
+                student_count=_per_department(Student.objects, 'program__department'),
+                faculty_count=_per_department(Faculty.objects, 'department'),
+                program_count=_per_department(Program.objects, 'department'),
             )
+            # The old query's GROUP BY sorted the rows as a side effect. There
+            # is no GROUP BY now, so the order has to be asked for, or the
+            # dashboard payload silently changes order.
+            .order_by('department_id')
             .values('department_id', 'student_count', 'faculty_count', 'program_count')
         ))
 
@@ -372,7 +400,15 @@ class StudentListCreateAPIView(
     PersonSerializerMixin,
     generics.ListCreateAPIView
 ):
-    queryset = Student.objects.all()
+    # The same prefetching cache_student_data_task already feeds this
+    # serializer. Without it a bare page of 10 rows costs 66 queries: 11 x
+    # auth_user, 10 x person, 10 x address, 10 x qualification. The ?search
+    # and ?ordering paths never touch the cache, so they were the only paths
+    # not getting it — and they are the ones admins use most.
+    queryset = Student.objects.select_related(
+        'student_id', 'student_id__user', 'student_id__address', 'program',
+        'student_class', 'student_class__program',
+    ).prefetch_related('student_id__qualification_set')
     serializer_class = StudentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['program', 'student_class', 'program__department','status']
@@ -778,8 +814,13 @@ class CourseAllocationListCreateAPIView (
     serializer_class = CourseAllocationSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['faculty', 'status', 'course', 'semester']
+    # `enrollment__student__student_id__first_name` was dropped. Searching a
+    # reverse relation makes SearchFilter emit a correlated EXISTS subquery
+    # over the enrollment table, which cost 324 ms and 321 ms of this
+    # endpoint's 684 ms — for a search nobody performs, since you look a
+    # student up on the student list, not on the allocation list.
     search_fields = ['faculty__employee_id__person_id', 'faculty__employee_id__first_name',
-                     'faculty__employee_id__last_name','enrollment__student__student_id__first_name',
+                     'faculty__employee_id__last_name',
                      'course__course_code', ]
 
     def list(self, request, *args, **kwargs):
@@ -932,7 +973,15 @@ class CourseAllocationRetrieveUpdateDestroyAPIView(
     AdminCourseAllocationPermissionMixin,
     generics.RetrieveUpdateDestroyAPIView
 ):
-    queryset = CourseAllocation.objects.all()
+    # EnrollmentSerializer reads obj.student.student_id (Student, then Person)
+    # and obj.result for every enrolled student, so serialising one allocation
+    # cost 125 queries each for Student, person and result.
+    queryset = CourseAllocation.objects.prefetch_related(
+        Prefetch(
+            'enrollment_set',
+            queryset=Enrollment.objects.select_related('student__student_id', 'result'),
+        )
+    )
     serializer_class = CourseAllocationSerializer
     lookup_field = 'allocation_id'
 
@@ -980,7 +1029,19 @@ class EnrollmentListCreateAPIView(
             cache_key = f'admin:enrollments:student:{filter_params.get("student")}' if 'student' in filter_params else f'admin:enrollments:faculty:{filter_params.get("allocation__faculty")}'
             data = cache.get(cache_key)
             if data is None:
-                cache_enrollment_data_task.delay(self.request.user.id)
+                # One key is missing, so rebuild that one key. This used to
+                # rebuild all ~5,200, which never finished before the next
+                # request arrived.
+                if 'student' in filter_params:
+                    cache_enrollment_data_task.delay(
+                        self.request.user.id,
+                        student_ids=[filter_params['student']],
+                    )
+                else:
+                    cache_enrollment_data_task.delay(
+                        self.request.user.id,
+                        faculty_ids=[filter_params['allocation__faculty']],
+                    )
                 return super().list(request, *args, **kwargs)
             page = self.paginate_queryset(data)
             if page is not None:
@@ -990,8 +1051,12 @@ class EnrollmentListCreateAPIView(
         return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        serializer.save()
-        cache_enrollment_data_task.delay(self.request.user.id)
+        instance = serializer.save()
+        cache_enrollment_data_task.delay(
+            self.request.user.id,
+            student_ids=[instance.student_id],
+            faculty_ids=[instance.allocation.faculty_id],
+        )
 
 
 
@@ -1004,16 +1069,38 @@ class EnrollmentRetrieveUpdateDestroyAPIView(
     lookup_field = 'enrollment_id'
 
     def perform_update(self, serializer):
-        serializer.save()
-        cache_enrollment_data_task.delay(self.request.user.id)
+        # Read the old owners before saving: an update can move the enrollment
+        # to a different student or a different allocation, which leaves the
+        # previous student's and previous teacher's keys wrong too.
+        previous = serializer.instance
+        student_ids = [previous.student_id]
+        faculty_ids = [previous.allocation.faculty_id]
+
+        instance = serializer.save()
+
+        student_ids.append(instance.student_id)
+        faculty_ids.append(instance.allocation.faculty_id)
+        cache_enrollment_data_task.delay(
+            self.request.user.id,
+            student_ids=student_ids,
+            faculty_ids=faculty_ids,
+        )
 
     def perform_destroy(self, instance):
         result = Result.objects.get(enrollment=instance.enrollment_id)
         if result.course_gpa:
             raise PermissionDenied('This enrollment cannot be deleted')
         else:
+            # Read them off before the delete; afterwards there is nothing to
+            # read them from.
+            student_id = instance.student_id
+            faculty_id = instance.allocation.faculty_id
             instance.delete()
-            cache_enrollment_data_task.delay(self.request.user.id)
+            cache_enrollment_data_task.delay(
+                self.request.user.id,
+                student_ids=[student_id],
+                faculty_ids=[faculty_id],
+            )
 
 
 

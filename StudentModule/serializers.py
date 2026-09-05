@@ -66,8 +66,11 @@ class AssessmentCheckedHyperlinkedIdentityField(serializers.HyperlinkedIdentityF
         if obj.assessment_id is None:
             return None
         kwargs = {
-            'enrollment_id' : obj.enrollment.enrollment_id,
-            'assessment_id': obj.assessment.assessment_id,
+            # The FK ids are already on the row. Going through obj.enrollment
+            # and obj.assessment fetches both parents once per row -- 251 of
+            # the 269 queries on the enrollment detail endpoint.
+            'enrollment_id': obj.enrollment_id,
+            'assessment_id': obj.assessment_id,
             'id': getattr(obj, self.lookup_field)
         }
         return self.reverse(view_name, kwargs=kwargs, request=request, format=format)

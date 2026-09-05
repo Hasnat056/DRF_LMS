@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from django.core.cache import cache
+from django.db.models import Count, Prefetch, Q, Sum
 from django.shortcuts import reverse, get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -73,7 +74,12 @@ class FacultyDashboardView(
         if data is not None:
             return Response(data, status=status.HTTP_200_OK)
 
-        faculty = Faculty.objects.filter(employee_id__user=self.request.user).prefetch_related('courseallocation_set').first()
+        # select_related, not prefetch_related: every use of the allocations
+        # below is a filtered count or aggregate, which re-queries and ignores
+        # a prefetch cache. employee_id is read six times just here.
+        faculty = Faculty.objects.filter(
+            employee_id__user=self.request.user
+        ).select_related('employee_id').first()
         faculty_data = {
             'employee_id': faculty.employee_id.person_id,
             'image' : request.build_absolute_uri(faculty.employee_id.image.url) if faculty.employee_id.image else None,
@@ -81,27 +87,38 @@ class FacultyDashboardView(
             'last_name': faculty.employee_id.last_name,
             'institutional_email': faculty.employee_id.institutional_email,
         }
-        course_allocation_count = faculty.courseallocation_set.all().count()
         # A locked allocation is still the faculty's to finish — results may
         # not be calculated yet — so it stays on the dashboard as active.
         # Only 'Completed' moves to history.
-        active_allocations = faculty.courseallocation_set.filter(
-            status__in=['Active', 'Locked']
-        ).count()
-        completed_allocations = faculty.courseallocation_set.filter(status='Completed').count()
-        allocation_average_success = {}
-        for each in faculty.courseallocation_set.filter(status='Completed'):
-            enrollments = each.enrollment_set.all()
-            count = enrollments.count()
-            if count == 0:
-                average = 0
-            else:
-                marks = [
-                    e.result.obtained_marks for e in enrollments
-                    if hasattr(e, 'result') and e.result.obtained_marks
-                ]
-                average = sum(marks) / count if marks else 0
-            allocation_average_success[each.allocation_id] = average
+        counts = faculty.courseallocation_set.aggregate(
+            total=Count('allocation_id'),
+            active=Count('allocation_id', filter=Q(status__in=['Active', 'Locked'])),
+            completed=Count('allocation_id', filter=Q(status='Completed')),
+        )
+        course_allocation_count = counts['total']
+        active_allocations = counts['active']
+        completed_allocations = counts['completed']
+
+        # One aggregate for every completed allocation, instead of a query per
+        # allocation for the enrollment count and then one per enrollment for
+        # its result — 1,000 of the dashboard's 1,024 queries were the latter.
+        #
+        # enrollment -> result is one-to-one, so the join cannot multiply rows
+        # and the sum stays correct. Enrollments with no result contribute
+        # NULL, which SUM skips, matching the old `hasattr(e, 'result')` guard.
+        allocation_average_success = {
+            allocation_id: (marks_total / enrollment_total
+                            if enrollment_total and marks_total else 0)
+            for allocation_id, enrollment_total, marks_total in (
+                faculty.courseallocation_set
+                .filter(status='Completed')
+                .annotate(
+                    enrollment_total=Count('enrollment', distinct=True),
+                    marks_total=Sum('enrollment__result__obtained_marks'),
+                )
+                .values_list('allocation_id', 'enrollment_total', 'marks_total')
+            )
+        }
 
         data = {
             'faculty': faculty_data,
@@ -218,7 +235,14 @@ class FacultyCourseAllocationRetrieveView(
     FacultyCourseAllocationPermissionMixin,
     generics.RetrieveUpdateAPIView
 ):
-    queryset = CourseAllocation.objects.all()
+    # Same serializer as the admin allocation detail, so the same N+1: one
+    # Student, one person and one result query per enrolled student.
+    queryset = CourseAllocation.objects.prefetch_related(
+        Prefetch(
+            'enrollment_set',
+            queryset=Enrollment.objects.select_related('student__student_id', 'result'),
+        )
+    )
     serializer_class = get_faculty_allocation_serializer()
     lookup_field = 'allocation_id'
 
@@ -241,7 +265,14 @@ class AssessmentListCreateAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Assessment.objects.filter(allocation=allocation_id)
+        # AssessmentCheckedSerializer.get_student_info walks
+        # obj.enrollment.student.student_id for every checked row.
+        queryset = Assessment.objects.filter(allocation=allocation_id).prefetch_related(
+            Prefetch(
+                'assessmentchecked_set',
+                queryset=AssessmentChecked.objects.select_related('enrollment__student__student_id'),
+            )
+        )
         return queryset
 
     def get_serializer_context(self):
@@ -306,7 +337,14 @@ class AssessmentRetrieveUpdateDestroyAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Assessment.objects.filter(allocation=allocation_id)
+        # AssessmentCheckedSerializer.get_student_info walks
+        # obj.enrollment.student.student_id for every checked row.
+        queryset = Assessment.objects.filter(allocation=allocation_id).prefetch_related(
+            Prefetch(
+                'assessmentchecked_set',
+                queryset=AssessmentChecked.objects.select_related('enrollment__student__student_id'),
+            )
+        )
         return queryset
 
 
@@ -326,7 +364,13 @@ class LectureListCreateAPIView(
     serializer_class = LectureSerializer
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Lecture.objects.filter(allocation=allocation_id)
+        # AttendanceSerializer.get_student_info does the same walk per row.
+        queryset = Lecture.objects.filter(allocation=allocation_id).prefetch_related(
+            Prefetch(
+                'attendance_set',
+                queryset=Attendance.objects.select_related('enrollment__student__student_id'),
+            )
+        )
         return queryset
 
     def get_serializer_context(self):
@@ -345,7 +389,13 @@ class LectureRetrieveUpdateDestroyAPIView(
 
     def get_queryset(self):
         allocation_id = self.kwargs.get('allocation_id')
-        queryset = Lecture.objects.filter(allocation=allocation_id)
+        # AttendanceSerializer.get_student_info does the same walk per row.
+        queryset = Lecture.objects.filter(allocation=allocation_id).prefetch_related(
+            Prefetch(
+                'attendance_set',
+                queryset=Attendance.objects.select_related('enrollment__student__student_id'),
+            )
+        )
         return queryset
 
 

@@ -308,21 +308,41 @@ class FacultyListCreateAPIView(
     filterset_fields = ['department', 'designation']
     search_fields = ['employee_id__first_name', 'employee_id__last_name', 'employee_id__institutional_email']
 
+    @staticmethod
+    def _groups_for(filter_params):
+        """The one group this request needs, in the task's own terms.
+
+        `cache_faculty_data_task` always rewrites `admin:faculty_list`, and
+        with an empty group list it writes nothing else -- so [] means
+        "rebuild only the unfiltered key". A tuple with one half None asks for
+        just that half's key.
+        """
+        department = filter_params.get('department')
+        designation = filter_params.get('designation')
+        if department is None and designation is None:
+            return []
+        return [(department, designation)]
+
     def list(self, request, *args, **kwargs):
+
+        query_params = request.query_params
+        filter_params = {
+            key : value for key, value in query_params.items() if key!='page'
+        }
 
         cache_key = f'admin:faculty_list'
         cached_data = cache.get(cache_key)
         # if cached data is not available
         if cached_data is None:
-            cache_faculty_data_task.delay(request.user.id)
+            # Rebuild the unfiltered key plus whichever group this request
+            # asked for -- not every department, designation and pair in the
+            # system, which is what an unscoped call does.
+            cache_faculty_data_task.delay(
+                request.user.id, faculty_groups=self._groups_for(filter_params),
+            )
             return super().list(request, *args, **kwargs)
 
         else:
-            query_params = request.query_params
-
-            filter_params = {
-                key : value for key, value in query_params.items() if key!='page'
-            }
             if not query_params or not filter_params:
                 page = self.paginate_queryset(cached_data)
                 if page is not None:
@@ -337,6 +357,13 @@ class FacultyListCreateAPIView(
                 cache_key = f'admin:faculty:{filter_params.get("department")}:{filter_params.get("designation")}'
                 data = cache.get(cache_key)
                 if data is None:
+                    # Only this pair is missing; rebuilding every other
+                    # department and designation would not answer the request
+                    # any sooner.
+                    cache_faculty_data_task.delay(
+                        request.user.id,
+                        faculty_groups=self._groups_for(filter_params),
+                    )
                     return super().list(request, *args, **kwargs)
                 page = self.paginate_queryset(data)
                 if page is not None:
@@ -349,6 +376,9 @@ class FacultyListCreateAPIView(
                 cache_key = f'admin:faculty:department:{value}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_faculty_data_task.delay(
+                        request.user.id, faculty_groups=[(value, None)],
+                    )
                     return super().list(request, *args, **kwargs)
                 page = self.paginate_queryset(data)
                 if page is not None:
@@ -361,6 +391,9 @@ class FacultyListCreateAPIView(
                 cache_key = f'admin:faculty:designation:{value}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_faculty_data_task.delay(
+                        request.user.id, faculty_groups=[(None, value)],
+                    )
                     return super().list(request, *args, **kwargs)
                 page = self.paginate_queryset(data)
                 if page is not None:
@@ -429,18 +462,42 @@ class StudentListCreateAPIView(
     filterset_fields = ['program', 'student_class', 'program__department','status']
     search_fields = ['student_id__first_name', 'student_id__last_name', 'student_id__institutional_email']
 
+    @staticmethod
+    def _groups_for(filter_params):
+        """The one group this request needs, in the task's own terms.
+
+        cache_student_data_task always rewrites `admin:student_list`, and with
+        an empty group list it writes nothing else -- so [] means "rebuild
+        only the unfiltered key". The tuple is
+        (department, program, class, status); None in a slot skips that key.
+        """
+        group = (
+            filter_params.get('program__department'),
+            filter_params.get('program'),
+            filter_params.get('student_class'),
+            filter_params.get('status'),
+        )
+        return [] if not any(group) else [group]
+
     def list(self, request, *args, **kwargs):
+        query_params = request.query_params
+        filter_params = {
+            key : value for key,value in query_params.items() if key!='page' and value !=''
+        }
+
         cache_key = 'admin:student_list'
         cached_data = cache.get(cache_key)
         if cached_data is None:
-            cache_student_data_task.delay(request.user.id)
+            # Rebuild the unfiltered key plus whichever group was asked for.
+            # Unscoped this rebuilt 5 departments x (1 + 4 statuses) + 10
+            # programs + 40 classes + 4 statuses over 5,000 students -- 18.8
+            # of the 19.7 seconds of total worker fill measured in the audit.
+            cache_student_data_task.delay(
+                request.user.id, student_groups=self._groups_for(filter_params),
+            )
             return super().list(request, *args, **kwargs)
 
         else:
-            query_params = request.query_params
-            filter_params = {
-                key : value for key,value in query_params.items() if key!='page' and value !=''
-            }
             if not query_params or not  filter_params:
                 logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(cached_data)
@@ -457,6 +514,9 @@ class StudentListCreateAPIView(
                     cache_key = f'admin:students:{query_params.get("program__department")}:{query_params.get("status")}'
                     data = cache.get(cache_key)
                     if data is None:
+                        cache_student_data_task.delay(
+                            request.user.id, student_groups=self._groups_for(filter_params),
+                        )
                         return super().list(request, *args, **kwargs)
                     logger.debug('Cache hit for %s', cache_key)
                     page = self.paginate_queryset(data)
@@ -470,6 +530,9 @@ class StudentListCreateAPIView(
                 cache_key = f'admin:students:program:{query_params.get("program")}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_student_data_task.delay(
+                        request.user.id, student_groups=[(None, query_params.get("program"), None, None)],
+                    )
                     return super().list(request, *args, **kwargs)
                 logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
@@ -481,6 +544,9 @@ class StudentListCreateAPIView(
                 cache_key = f'admin:students:department:{query_params.get("program__department")}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_student_data_task.delay(
+                        request.user.id, student_groups=[(query_params.get("program__department"), None, None, None)],
+                    )
                     return super().list(request, *args, **kwargs)
                 logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
@@ -492,6 +558,9 @@ class StudentListCreateAPIView(
                 cache_key = f'admin:students:class:{query_params.get("student_class")}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_student_data_task.delay(
+                        request.user.id, student_groups=[(None, None, query_params.get("student_class"), None)],
+                    )
                     return super().list(request, *args, **kwargs)
                 logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
@@ -503,6 +572,9 @@ class StudentListCreateAPIView(
                 cache_key = f'admin:students:status:{query_params.get("status")}'
                 data = cache.get(cache_key)
                 if data is None:
+                    cache_student_data_task.delay(
+                        request.user.id, student_groups=[(None, None, None, query_params.get("status"))],
+                    )
                     return super().list(request, *args, **kwargs)
                 logger.debug('Cache hit for %s', cache_key)
                 page = self.paginate_queryset(data)
@@ -770,16 +842,23 @@ class SemesterListAPIView(
         return _semester_cache_queryset()
 
     def list(self, request, *args, **kwargs):
-        cache_key = 'admin:semesters_list'
-        cached_data = cache.get(cache_key)
-        if cached_data is None:
-            cache_semester_data_task.delay(self.request.user.id)
-            return  super().list(request, *args, **kwargs)
-        
         query_params = request.query_params
         filter_params = {
             key : value for key, value in query_params.items() if key!='page' and value != ''
         }
+
+        cache_key = 'admin:semesters_list'
+        cached_data = cache.get(cache_key)
+        if cached_data is None:
+            # Rebuild the unfiltered key plus the class actually asked for.
+            # An empty list rebuilds only the unfiltered key, which the task
+            # writes unconditionally.
+            requested = filter_params.get('associated_class')
+            cache_semester_data_task.delay(
+                self.request.user.id,
+                class_ids=[requested] if requested else [],
+            )
+            return  super().list(request, *args, **kwargs)
         
         if not query_params or not filter_params:
             logger.debug('Cache hit for %s', cache_key)
@@ -795,6 +874,10 @@ class SemesterListAPIView(
             cache_key= f'admin:semesters:class:{filter_params.get('associated_class')}'
             data = cache.get(cache_key)
             if data is None:
+                cache_semester_data_task.delay(
+                    self.request.user.id,
+                    class_ids=[filter_params.get('associated_class')],
+                )
                 return super().list(request, *args, **kwargs)
             logger.debug('Cache hit for %s', cache_key)
             page = self.paginate_queryset(data)

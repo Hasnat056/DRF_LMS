@@ -15,6 +15,7 @@ import socket
 from datetime import timedelta
 from pathlib import Path
 from decouple import config, Csv
+from django.core.exceptions import ImproperlyConfigured
 import cloudinary
 
 from rest_framework.permissions import DjangoModelPermissions
@@ -246,23 +247,51 @@ CACHES = {
 }
 
 
-# Test / benchmark isolation
-# --------------------------
-# Under pytest, point the database and cache at the dedicated containers
-# (`docker compose --profile test up -d database-test redis-test`). Without
-# this the suite shares MySQL and Redis with the running dev stack: the autouse
-# `cache.clear()` fixtures flush whatever the app had cached, and benchmark
-# timings compete with dev queries for the same buffer pool.
+# Environment
+# -----------
+# Which stack this process belongs to. Each compose file sets it, and each has
+# its own env file sitting beside it:
+#
+#     prod    docker-compose.yaml         + .env
+#     dev     dev/docker-compose.yaml     + dev/.env
+#     test    tests/docker-compose.yaml   + tests/.env
+#
+# Everything environment-specific -- hosts, DEBUG, throttle rates -- comes from
+# that file. This setting exists only for the two things an env file cannot
+# decide for itself: forcing the test endpoints whenever pytest runs, and
+# refusing to serve production with DEBUG on.
 
+ENVIRONMENT = config('DJANGO_ENV', default='dev')
+
+# pytest means the test environment regardless of which env file was loaded.
+# Without this, running the suite from a dev shell would point the autouse
+# `cache.clear()` fixtures and the test-database teardown at dev's Redis and
+# MySQL. This is a safety net, not the normal path: tests/.env sets
+# DJANGO_ENV=test explicitly.
 RUNNING_TESTS = (
     'PYTEST_CURRENT_TEST' in os.environ
     or 'pytest' in os.path.basename(sys.argv[0])
-    # Lets a non-pytest process join the test stack -- the benchmark Celery
-    # worker sets TEST_MODE=true so it reads database-test and redis-test.
-    or config('TEST_MODE', default=False, cast=bool)
 )
-
 if RUNNING_TESTS:
+    ENVIRONMENT = 'test'
+
+if ENVIRONMENT not in ('dev', 'test', 'prod'):
+    raise ImproperlyConfigured(
+        f"DJANGO_ENV must be one of 'dev', 'test', 'prod' -- got {ENVIRONMENT!r}."
+    )
+
+if ENVIRONMENT == 'prod' and DEBUG:
+    raise ImproperlyConfigured(
+        'DEBUG must be False when DJANGO_ENV=prod. The stacks read separate env '
+        'files so a development value cannot reach production by inheritance -- '
+        'if this fires, .env has DEBUG=True.'
+    )
+
+if ENVIRONMENT == 'test':
+    # Point at the test stack's own containers. The defaults name the compose
+    # services, so the suite stays isolated even when it is run from a dev
+    # shell with dev/.env loaded -- the case the pytest override above exists
+    # for. Under tests/.env these are supplied explicitly.
     DATABASES['default']['HOST'] = config('TEST_DB_HOST', default='database-test')
     CACHES['default']['LOCATION'] = config(
         'TEST_REDIS_URL', default='redis://redis-test:6379/0'
@@ -276,7 +305,7 @@ if RUNNING_TESTS:
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis-server:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://redis-server:6379/1')
 
-if RUNNING_TESTS:
+if ENVIRONMENT == 'test':
     # Keep benchmark jobs off the dev broker: a stray `.delay()` there would be
     # picked up by the live worker and run against the dev database. Databases
     # 2 and 3 so the broker does not collide with the test caches on 0 and 1.

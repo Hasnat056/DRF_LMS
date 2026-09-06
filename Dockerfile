@@ -1,4 +1,15 @@
-# Use official Python slim base image
+# The image, used by every stack: production, local development and test.
+#
+# The code is COPYed in and the image is self-contained -- nothing mounts a repo
+# over /app except the test runner, which needs to re-run an edited suite
+# without rebuilding. What differs between environments is how this image is
+# run: which env file it reads (DJANGO_ENV), which services accompany it, and
+# what is published. That is compose's job, not the image's.
+#
+# Rebuild after changing application code:
+#     docker compose build backend                              # production
+#     docker compose -f dev/docker-compose.yaml build backend   # local
+#
 FROM python:3.12-slim
 
 # -----------------------------
@@ -44,6 +55,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------
 # Copy Django project files
+#
+# Everything the image should NOT carry -- .env, .git, .venv, generated
+# benchmark output -- is excluded by .dockerignore. Without that this COPY
+# bakes the real secrets into a shipped layer.
 # -----------------------------
 COPY --chown=drfuser:drfuser . /app/
 

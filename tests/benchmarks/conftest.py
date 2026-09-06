@@ -138,7 +138,7 @@ def celery_eager(settings):
 
     Redefining the fixture name here shadows the parent's for this directory.
     Jobs go to `redis-test` db 2, and `celery-worker-test` consumes them
-    (`docker compose --profile test up -d`).
+    (`docker compose -f tests/docker-compose.yaml up -d`).
     """
     settings.CELERY_TASK_ALWAYS_EAGER = False
     settings.CELERY_TASK_EAGER_PROPAGATES = False

@@ -175,8 +175,12 @@ NexusAPI/
 │
 ├── conftest.py                 # Shared pytest fixtures
 ├── locustfile.py               # Load testing scenarios
-├── docker-compose.yaml
-├── Dockerfile
+├── docker-compose.yaml         # Production stack (reads .env)
+├── Dockerfile                  # The image — every stack builds this one
+├── .dockerignore
+├── .env.example
+├── dev/                        # Local development stack
+├── tests/                      # Test / benchmark stack
 ├── requirements.txt
 ├── pytest.ini
 ├── setup.cfg
@@ -461,14 +465,18 @@ NexusAPI has a comprehensive test suite with **600+ tests** across all modules, 
 | Compilers | 97% |
 | Models | 90% |
 
+The suite runs in the test stack, which has its own MySQL and Redis so it can
+never touch development or production data. `test-runner` mounts the repo, so
+it runs the code you are editing, and is torn down after each run.
+
 ### Run all tests:
 ```bash
-docker compose exec backend pytest -v --tb=short
+docker compose -f tests/docker-compose.yaml run --rm test-runner
 ```
 
 ### Run with coverage:
 ```bash
-docker compose exec backend pytest \
+docker compose -f tests/docker-compose.yaml run --rm test-runner pytest \
   --cov=AdminModule --cov=FacultyModule --cov=StudentModule \
   --cov=Compilers --cov=Models \
   --cov-report=term-missing --cov-config=setup.cfg
@@ -476,10 +484,10 @@ docker compose exec backend pytest \
 
 ### Run a specific module:
 ```bash
-docker compose exec backend pytest AdminModule/tests/ -v
-docker compose exec backend pytest FacultyModule/tests/ -v
-docker compose exec backend pytest StudentModule/tests/ -v
-docker compose exec backend pytest Compilers/tests/ -v
+docker compose -f tests/docker-compose.yaml run --rm test-runner pytest AdminModule/tests/ -v
+docker compose -f tests/docker-compose.yaml run --rm test-runner pytest FacultyModule/tests/ -v
+docker compose -f tests/docker-compose.yaml run --rm test-runner pytest StudentModule/tests/ -v
+docker compose -f tests/docker-compose.yaml run --rm test-runner pytest Compilers/tests/ -v
 ```
 
 ---

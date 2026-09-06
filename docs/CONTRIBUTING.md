@@ -45,8 +45,12 @@ Both `main` and `develop` have branch protection:
 ## Local testing before opening a PR
 
 ```bash
-docker compose up --build
-docker compose exec backend pytest -v --tb=short
+# Local development stack (its own MySQL and Redis, on :8000)
+docker compose -f dev/docker-compose.yaml up -d --build
+
+# The suite runs in the test stack, against its own MySQL and Redis
+docker compose -f tests/docker-compose.yaml up -d
+docker compose -f tests/docker-compose.yaml run --rm test-runner
 ```
 
 The `Run Tests` workflow mirrors this (MySQL + Redis service containers,

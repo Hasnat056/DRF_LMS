@@ -1,0 +1,177 @@
+# ---------------------------------------------------------------------------
+# Test / benchmark / load-test stack.
+#
+#     docker compose -f tests/docker-compose.yaml up -d
+#     docker compose -f tests/docker-compose.yaml run --rm test-runner
+#     docker compose -f tests/docker-compose.yaml down
+#
+# Reads tests/.env automatically -- compose loads the .env beside the compose
+# file, so no --env-file flag is needed. That file sets DJANGO_ENV=test, which
+# points settings.py at the containers below.
+#
+# Isolated from dev and prod for two reasons: the suite's autouse fixtures call
+# cache.clear() on every test, which would otherwise flush whatever the running
+# app had cached; and benchmark timings should not compete with another stack's
+# queries for the same MySQL container's CPU and buffer pool.
+#
+# Builds the root Dockerfile, same as every other stack. There is one image;
+# what differs between environments is how it is run -- which env file, which
+# services accompany it, what is published.
+# ---------------------------------------------------------------------------
+
+name: nexusapi-test
+
+services:
+  database-test:
+    env_file:
+      - .env
+    image: mysql:8.0
+    container_name: nexusapi-database-test
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      # A normal volume, deliberately not tmpfs: production runs MySQL on disk,
+      # and timing queries against RAM would hide the I/O cost the benchmarks
+      # exist to measure.
+      - mysql_test_data:/var/lib/mysql
+      # Grants the app user server-wide rights so the Django test runner can
+      # create and drop its own `test_*` database.
+      - ./benchmarks/mysql-test-init.sql:/docker-entrypoint-initdb.d/10-grants.sql:ro
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-test:
+    image: redis:latest
+    container_name: nexusapi-redis-test
+    restart: unless-stopped
+    command: redis-server --save ""
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Serves the stress dataset for tests/loadtest/cache_pressure.py, so the
+  # cache experiment runs against the same 5,000 students the audit measured
+  # rather than the handful in the dev database.
+  #
+  # The image CMD is a single sync gunicorn worker, which would serialise every
+  # request and make a load test measure queueing rather than caching.
+  # GUNICORN_WORKERS is deliberately modest: each worker is a full Django
+  # process, and this host has already shown it will swap under pressure.
+  backend-stress:
+    env_file:
+      - .env
+    build:
+      context: ..
+      # Relative to the build context (the repo root), not to this file.
+      dockerfile: Dockerfile
+    container_name: nexusapi-backend-stress
+    command: >
+      gunicorn NexusAPI.wsgi:application --bind 0.0.0.0:8000
+      --workers ${GUNICORN_WORKERS:-4} --timeout 120
+    restart: unless-stopped
+    environment:
+      # The database pytest-django builds for the benchmarks. `--reuse-db`
+      # keeps it between runs, so a static name is safe.
+      DB_NAME: test_${DB_NAME}_bench
+    ports:
+      # 8000 is the dev stack, 8001 the dev redis-server's second published port.
+      - "8002:8000"
+    volumes:
+      - code_files:/code
+      - static_files:/app/staticfiles
+    depends_on:
+      database-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  # A real worker, so `.delay()` behaves the way it does in production: the
+  # request publishes a job and returns, and the cache is filled asynchronously.
+  # Without it the suite's autouse CELERY_TASK_ALWAYS_EAGER fixture runs
+  # cache_*_data_task inline, inside the request being timed -- which inflated
+  # every "cold" figure in the first audit run by the cost of a full cache
+  # rebuild that production does on a worker.
+  celery-worker-test:
+    env_file:
+      - .env
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nexusapi-celery-worker-test
+    command: celery -A NexusAPI worker --loglevel=info
+    restart: unless-stopped
+    environment:
+      DB_NAME: test_${DB_NAME}_bench
+    depends_on:
+      redis-test:
+        condition: service_healthy
+      database-test:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  # Where the test suite runs.
+  #
+  # It has no DB_NAME override on purpose: pytest-django derives the database
+  # name from DB_NAME (`LMS` -> `test_LMS`, and `test_LMS_bench` for the
+  # benchmarks, via tests/benchmarks/conftest.py). Setting it here would
+  # produce `test_test_LMS_bench`.
+  #
+  # `profiles` keeps it out of `up -d`; `docker compose run` enables the
+  # profile automatically, so it exists only for the length of a run:
+  #
+  #     docker compose -f tests/docker-compose.yaml run --rm test-runner
+  #     ... run --rm test-runner pytest AdminModule/tests -v
+  #
+  # The repo is mounted here and only here: a suite you cannot edit and re-run
+  # without rebuilding an image is not a usable suite. Remove the `volumes`
+  # block to test strictly what was built.
+  test-runner:
+    profiles: ["tools"]
+    env_file:
+      - .env
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nexusapi-test-runner
+    command: pytest -v --tb=short
+    volumes:
+      - ..:/app
+    depends_on:
+      database-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+# mysql_test_data belongs to this stack alone, so a `down -v` here cannot take
+# anything else with it -- and nothing else can take the seeded stress database
+# (5,000 students, 75,000 enrollments) with it either. The other two are pinned
+# to the volumes the dev and prod stacks already use.
+volumes:
+  mysql_test_data:
+    name: nexusapi_mysql_test_data
+  code_files:
+    name: nexusapi_code_files
+  static_files:
+    name: nexusapi_static_files
+
+networks:
+  nexus_network:
+    driver: bridge

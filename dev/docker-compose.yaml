@@ -1,0 +1,168 @@
+# ---------------------------------------------------------------------------
+# Local development stack.
+#
+#     docker compose -f dev/docker-compose.yaml up -d --build
+#     docker compose -f dev/docker-compose.yaml logs -f backend
+#     docker compose -f dev/docker-compose.yaml down
+#
+# Reads dev/.env automatically -- compose loads the .env sitting beside the
+# compose file, so no --env-file flag is needed.
+#
+# Separate from the production stack because the two want different things: no
+# nginx or TLS here (nginx.conf is pinned to the Azure hostname and its Let's
+# Encrypt certificates, which do not exist on a laptop), DEBUG on, and the app
+# published directly on :8000.
+#
+# The code is baked into the image, as it is in production. Application changes
+# need a rebuild:
+#     docker compose -f dev/docker-compose.yaml up -d --build backend
+# ---------------------------------------------------------------------------
+
+name: nexusapi-dev
+
+services:
+  backend:
+    env_file:
+      - .env
+    build:
+      context: ..
+      # Relative to the build context (the repo root), not to this file.
+      dockerfile: Dockerfile
+    container_name: nexusapi-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - code_files:/code
+      - static_files:/app/staticfiles
+    depends_on:
+      database-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  celery-worker:
+    env_file:
+      - .env
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nexusapi-celery-worker-dev
+    command: celery -A NexusAPI worker --loglevel=info
+    restart: unless-stopped
+    depends_on:
+      redis-dev:
+        condition: service_healthy
+      database-dev:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  celery-beat:
+    env_file:
+      - .env
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nexusapi-celery-beat-dev
+    command: celery -A NexusAPI beat --loglevel=info
+    restart: unless-stopped
+    depends_on:
+      redis-dev:
+        condition: service_healthy
+      database-dev:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  database-dev:
+    env_file:
+      - .env
+    image: mysql:8.0
+    container_name: nexusapi-database-dev
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-dev:
+    image: redis:latest
+    container_name: nexusapi-redis-dev
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - nexus_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Code-execution services. Compilers/serializers.py dials these by hostname
+  # (`http://python-compiler:8000/run`), so a submission made locally fails
+  # without them. Behind a profile because they are three more containers and
+  # most local work never touches them:
+  #
+  #     docker compose -f dev/docker-compose.yaml --profile compilers up -d
+  #
+  # Single replicas here; production runs two of each.
+  python-compiler:
+    profiles: ["compilers"]
+    build: ../Compilers/python_compiler
+    container_name: nexusapi-python-compiler-dev
+    restart: unless-stopped
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+  c-compiler:
+    profiles: ["compilers"]
+    build: ../Compilers/c_compiler
+    container_name: nexusapi-c-compiler-dev
+    restart: unless-stopped
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+  java-compiler:
+    profiles: ["compilers"]
+    build: ../Compilers/java_compiler
+    container_name: nexusapi-java-compiler-dev
+    restart: unless-stopped
+    volumes:
+      - code_files:/code
+    networks:
+      - nexus_network
+
+# The dev database and cache are this stack's own -- nothing here is shared
+# with production or with the test stack. code_files and static_files are
+# pinned to the volumes the other stacks already use, so a locally compiled
+# submission and the collected static files behave the same everywhere.
+volumes:
+  mysql_dev_data:
+  redis_dev_data:
+  code_files:
+    name: nexusapi_code_files
+  static_files:
+    name: nexusapi_static_files
+
+networks:
+  nexus_network:
+    driver: bridge

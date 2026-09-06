@@ -238,7 +238,7 @@ class Command(BaseCommand):
                 continue
             lab, lab_created = Course.objects.get_or_create(
                 course_code=f'{code}-L',
-                defaults={'course_name': f'{name} -L', 'credit_hours': 1},
+                defaults={'course_name': f'{name}-Lab', 'credit_hours': 1},
             )
             course.lab = lab
             course.save(update_fields=['lab'])

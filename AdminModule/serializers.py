@@ -26,14 +26,16 @@ logger = logging.getLogger(__name__)
 
 # A lab is a course in its own right, coded and named after the theory course
 # it belongs to. Admins never type either one -- ticking the lab box on a
-# course derives both.
-LAB_COURSE_SUFFIX = '-L'
+# course derives both. The code stays terse where it is read in bulk; the
+# name spells it out where it is read on its own.
+LAB_COURSE_CODE_SUFFIX = '-L'
+LAB_COURSE_NAME_SUFFIX = '-Lab'
 COURSE_CODE_MAX_LENGTH = Course._meta.get_field('course_code').max_length
 COURSE_NAME_MAX_LENGTH = Course._meta.get_field('course_name').max_length
 
 
 def _lab_course_name(course_name):
-    return f'{course_name} {LAB_COURSE_SUFFIX}'[:COURSE_NAME_MAX_LENGTH]
+    return f'{course_name}{LAB_COURSE_NAME_SUFFIX}'[:COURSE_NAME_MAX_LENGTH]
 
 
 
@@ -488,24 +490,40 @@ class CourseSerializer(serializers.ModelSerializer):
         return value
 
     def _build_lab(self, course):
-        """Create the {code}-L course and hang it off its theory course."""
-        lab_code = f'{course.course_code}{LAB_COURSE_SUFFIX}'
+        """Point the course at its {code}-L lab, creating it if it is missing.
+
+        Nothing stops an admin adding a lab as a plain course first, so a row
+        already sitting at the derived code is adopted rather than rejected.
+        Refusing would strand the pair: the course cannot be saved with the
+        box ticked, and saving it without leaves both rows in place with no
+        link and no way to make one.
+        """
+        lab_code = f'{course.course_code}{LAB_COURSE_CODE_SUFFIX}'
         if len(lab_code) > COURSE_CODE_MAX_LENGTH:
             raise serializers.ValidationError({
                 'lab': f"Course code '{course.course_code}' leaves no room for a "
-                       f"'{LAB_COURSE_SUFFIX}' suffix within "
+                       f"'{LAB_COURSE_CODE_SUFFIX}' suffix within "
                        f"{COURSE_CODE_MAX_LENGTH} characters"
             })
-        if Course.objects.filter(course_code=lab_code).exists():
-            raise serializers.ValidationError({
-                'lab': f"Course '{lab_code}' already exists"
-            })
 
-        lab = Course.objects.create(
-            course_code=lab_code,
-            course_name=_lab_course_name(course.course_name),
-            credit_hours=1,
-        )
+        lab = Course.objects.filter(course_code=lab_code).first()
+        if lab is None:
+            lab = Course.objects.create(
+                course_code=lab_code,
+                course_name=_lab_course_name(course.course_name),
+                credit_hours=1,
+            )
+        else:
+            if Course.objects.filter(lab=lab).exclude(pk=course.pk).exists():
+                raise serializers.ValidationError({
+                    'lab': f"Course '{lab_code}' is already the lab of another course"
+                })
+            # Adopted, so bring the derived half into line -- the name follows
+            # the theory course everywhere else too. Its credit hours stay as
+            # the admin entered them; nothing else recomputes those.
+            lab.course_name = _lab_course_name(course.course_name)
+            lab.save(update_fields=['course_name'])
+
         course.lab = lab
         course.save(update_fields=['lab'])
 

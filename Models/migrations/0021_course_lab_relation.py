@@ -18,7 +18,8 @@ from django.db import migrations, models
 
 logger = logging.getLogger(__name__)
 
-LAB_SUFFIX = '-L'
+LAB_CODE_SUFFIX = '-L'
+LAB_NAME_SUFFIX = '-Lab'
 MAX_CODE_LENGTH = 20
 MAX_NAME_LENGTH = 100
 
@@ -29,13 +30,13 @@ def split_lab_courses(apps, schema_editor):
 
     converted = skipped = 0
     for course in Course.objects.filter(has_lab=True).order_by('course_code'):
-        lab_code = f'{course.course_code}{LAB_SUFFIX}'
+        lab_code = f'{course.course_code}{LAB_CODE_SUFFIX}'
 
         if len(lab_code) > MAX_CODE_LENGTH:
             logger.warning(
                 'Course %s: no room for a %s suffix within %s characters, '
                 'leaving it unconverted',
-                course.course_code, LAB_SUFFIX, MAX_CODE_LENGTH,
+                course.course_code, LAB_CODE_SUFFIX, MAX_CODE_LENGTH,
             )
             skipped += 1
             continue
@@ -44,7 +45,7 @@ def split_lab_courses(apps, schema_editor):
         if lab is None:
             lab = Course.objects.create(
                 course_code=lab_code,
-                course_name=f'{course.course_name} {LAB_SUFFIX}'[:MAX_NAME_LENGTH],
+                course_name=f'{course.course_name}{LAB_NAME_SUFFIX}'[:MAX_NAME_LENGTH],
                 credit_hours=1,
             )
         elif Course.objects.filter(lab=lab).exclude(pk=course.pk).exists():
@@ -86,7 +87,7 @@ def merge_lab_courses(apps, schema_editor):
         # Only drop rows this migration would have created, and only while
         # nothing points at them -- an allocated or scheduled lab is real
         # data an admin has since built on.
-        if not lab.course_code.endswith(LAB_SUFFIX):
+        if not lab.course_code.endswith(LAB_CODE_SUFFIX):
             continue
         if lab.courseallocation_set.exists() or lab.semesterdetails_set.exists():
             logger.warning(

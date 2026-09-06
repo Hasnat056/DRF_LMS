@@ -131,7 +131,7 @@ def _seed(out):
     labs = Course.objects.bulk_create([
         Course(
             course_code=f'{course.course_code}-L',
-            course_name=f'{course.course_name} -L',
+            course_name=f'{course.course_name}-Lab',
             credit_hours=1,
             description=f'Auto-generated stress lab for {course.course_code}.',
         )

@@ -347,7 +347,7 @@ class TestCourseSerializerLabToggle:
         # The theory course keeps its own hours; the lab carries its one.
         assert course.credit_hours == 3
         assert course.lab.course_code == 'CS-LAB1-L'
-        assert course.lab.course_name == 'Lab Course -L'
+        assert course.lab.course_name == 'Lab Course-Lab'
         assert course.lab.credit_hours == 1
 
     def test_lab_false_on_create_builds_nothing(self, admin_user):
@@ -433,7 +433,7 @@ class TestCourseSerializerLabToggle:
             {'course_code': 'CS-REN', 'course_name': 'New Name', 'credit_hours': 3, 'lab': True},
             instance=course, admin_user=admin_user,
         )
-        assert updated.lab.course_name == 'New Name -L'
+        assert updated.lab.course_name == 'New Name-Lab'
 
     def test_lab_is_refused_when_the_code_leaves_no_room_for_the_suffix(self, admin_user):
         serializer = CourseSerializer(
@@ -445,12 +445,36 @@ class TestCourseSerializerLabToggle:
         with pytest.raises(drf_serializers.ValidationError):
             serializer.save()
 
-    def test_lab_is_refused_when_the_code_is_already_taken(self, admin_user, db):
-        Course.objects.create(
-            course_code='CS-DUP-L', course_name='Squatter', credit_hours=1
+    def test_ticking_the_box_adopts_a_lab_that_was_added_by_hand(self, admin_user, db):
+        existing = Course.objects.create(
+            course_code='CS-DUP-L', course_name='Added By Hand', credit_hours=2
         )
+        course = _save(
+            {'course_code': 'CS-DUP', 'course_name': 'Clash', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
+        )
+        # Refusing here would strand the pair: unsaveable with the box ticked,
+        # and two unlinked rows without it.
+        assert course.lab == existing
+        assert Course.objects.filter(course_code__endswith='-L').count() == 1
+
+        existing.refresh_from_db()
+        assert existing.course_name == 'Clash-Lab'  # the name is derived
+        assert existing.credit_hours == 2          # the hours are the admin's
+
+    def test_lab_already_claimed_by_another_course_is_refused(self, admin_user, db):
+        lab = Course.objects.create(
+            course_code='CS-OWN-L', course_name='Owned -L', credit_hours=1
+        )
+        owner = Course.objects.create(
+            course_code='CS-OTH', course_name='Owner', credit_hours=3
+        )
+        owner.lab = lab
+        owner.save(update_fields=['lab'])
+
+        # CS-OWN derives the code CS-OWN-L, which CS-OTH already holds.
         serializer = CourseSerializer(
-            data={'course_code': 'CS-DUP', 'course_name': 'Clash',
+            data={'course_code': 'CS-OWN', 'course_name': 'Contender',
                   'credit_hours': 3, 'lab': True},
             context=_ctx(admin_user),
         )

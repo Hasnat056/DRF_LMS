@@ -659,7 +659,7 @@ class TestCourseEndpoints:
         # The theory course keeps its own hours; the lab carries its one.
         assert Course.objects.get(course_code='CS-201').credit_hours == 3
         lab = Course.objects.get(course_code='CS-201-L')
-        assert lab.course_name == 'Lab Algorithms -L'
+        assert lab.course_name == 'Lab Algorithms-Lab'
         assert lab.credit_hours == 1
 
     def test_delete_course_takes_its_lab_with_it(self, admin_client):

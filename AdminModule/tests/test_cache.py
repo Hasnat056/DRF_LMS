@@ -65,14 +65,18 @@ class TestDashboardCache:
         assert response.status_code == 200
         assert response.data['students_total'] == cached['students_total']
 
-    def test_dashboard_cache_ttl_is_5_minutes(self, admin_client, admin_instance):
-        """Cache timeout should be 300 seconds (5 minutes)."""
+    def test_dashboard_cache_ttl_is_1_minute(self, admin_client, admin_instance):
+        """Cache timeout should be 60 seconds.
+
+        Nothing invalidates this key on a write, so the TTL is the only bound
+        on how stale the counts get — see the staleness test below.
+        """
         key = f'admin:dashboard:{admin_instance.employee_id.user.username}'
         admin_client.get(f'{ADMIN}/dashboard/')
 
         ttl = cache.ttl(key) if hasattr(cache, 'ttl') else None
         if ttl is not None:
-            assert ttl <= 300
+            assert 0 < ttl <= 60
 
     def test_bug_dashboard_not_invalidated_after_new_student(
         self, admin_client, admin_instance, student_instance

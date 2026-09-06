@@ -163,7 +163,7 @@ class TestDroppedEnrollmentsDoNotBlock:
         _graded(enrollment)
 
         dropped_course = Course.objects.create(
-            course_code='ZZ-900', course_name='Dropped', credit_hours=3, lab=False,
+            course_code='ZZ-900', course_name='Dropped', credit_hours=3,
         )
         SemesterDetails.objects.create(semester=locked_semester, course=dropped_course)
         dropped_allocation = CourseAllocation.objects.create(

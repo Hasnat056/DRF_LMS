@@ -9,7 +9,7 @@ Covers:
   - SemesterSerializer : activation_deadline / closing_deadline guard logic
   - CourseAllocationSerializer : semester eligibility filter, course-in-scheme validation
   - EnrollmentSerializer : allocation queryset restricted to Ongoing
-  - CourseSerializer : lab toggle credit-hour arithmetic (including the negative-hours bug)
+  - CourseSerializer : the lab checkbox building and removing the {code}-L course
   - BulkTranscriptSerializer : happy path + zero-division guard + missing-result guard
   - FacultyStudentBulkSerializer : file validation bug exposure
   - PersonSerializer / QualificationSerializer : field-level validators
@@ -142,7 +142,7 @@ class TestClassSerializerUpdate:
     ):
         """Sending a new course list should replace the old SemesterDetails rows."""
         old_course = Course.objects.create(
-            course_code='OLD-001', course_name='Old Course', credit_hours=2, lab=False
+            course_code='OLD-001', course_name='Old Course', credit_hours=2
         )
         SemesterDetails.objects.create(
             semester=inactive_semester, course=old_course
@@ -237,7 +237,7 @@ class TestCourseAllocationSerializer:
     ):
         """Course not in semester's SemesterDetails must be rejected."""
         unrelated_course = Course.objects.create(
-            course_code='CS-999', course_name='Unrelated', credit_hours=3, lab=False
+            course_code='CS-999', course_name='Unrelated', credit_hours=3
         )
         data = {
             'faculty': faculty_instance.pk,
@@ -300,7 +300,7 @@ class TestEnrollmentSerializerQueryset:
         from Models.models import Course
         other_course = Course.objects.create(
             course_code='CS-999', course_name='Dummy Course',
-            credit_hours=3, lab=False
+            credit_hours=3
         )
         inactive_alloc = CourseAllocation.objects.create(
             faculty=course_allocation.faculty,
@@ -327,61 +327,176 @@ class TestEnrollmentSerializerQueryset:
 
 
 # ===========================================================================
-# CourseSerializer — credit hours + lab toggle
+# CourseSerializer — the lab checkbox builds and removes a lab course
 # ===========================================================================
+
+def _save(data, instance=None, admin_user=None):
+    serializer = CourseSerializer(instance=instance, data=data, context=_ctx(admin_user))
+    assert serializer.is_valid(), serializer.errors
+    return serializer.save()
+
 
 @pytest.mark.django_db
 class TestCourseSerializerLabToggle:
 
-    def test_lab_true_on_create_increments_credit_hours(self, admin_user):
-        data = {'course_code': 'CS-LAB1', 'course_name': 'Lab Course', 'credit_hours': 3, 'lab': True}
-        serializer = CourseSerializer(data=data, context=_ctx(admin_user))
-        assert serializer.is_valid(), serializer.errors
-        course = serializer.save()
-        assert course.credit_hours == 4
-
-    def test_lab_false_on_create_does_not_increment(self, admin_user):
-        data = {'course_code': 'CS-NOLAB', 'course_name': 'Theory', 'credit_hours': 3, 'lab': False}
-        serializer = CourseSerializer(data=data, context=_ctx(admin_user))
-        assert serializer.is_valid(), serializer.errors
-        course = serializer.save()
+    def test_lab_true_on_create_builds_the_lab_course(self, admin_user):
+        course = _save(
+            {'course_code': 'CS-LAB1', 'course_name': 'Lab Course', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
+        )
+        # The theory course keeps its own hours; the lab carries its one.
         assert course.credit_hours == 3
+        assert course.lab.course_code == 'CS-LAB1-L'
+        assert course.lab.course_name == 'Lab Course-Lab'
+        assert course.lab.credit_hours == 1
 
-    def test_toggling_lab_true_to_false_decrements(self, admin_user, db):
-        course = Course.objects.create(
-            course_code='CS-T2F', course_name='Was Lab', credit_hours=4, lab=True
+    def test_lab_false_on_create_builds_nothing(self, admin_user):
+        course = _save(
+            {'course_code': 'CS-NOLAB', 'course_name': 'Theory', 'credit_hours': 3, 'lab': False},
+            admin_user=admin_user,
         )
-        data = {'course_code': 'CS-T2F', 'course_name': 'Was Lab', 'credit_hours': 4, 'lab': False}
-        serializer = CourseSerializer(instance=course, data=data, context=_ctx(admin_user))
-        assert serializer.is_valid(), serializer.errors
-        updated = serializer.save()
+        assert course.credit_hours == 3
+        assert course.lab is None
+        assert not Course.objects.filter(course_code='CS-NOLAB-L').exists()
+
+    def test_lab_is_left_without_a_prerequisite_of_its_own(self, admin_user, db):
+        prereq = Course.objects.create(
+            course_code='CS-000', course_name='Basics', credit_hours=3
+        )
+        course = _save(
+            {'course_code': 'CS-PRE', 'course_name': 'Advanced', 'credit_hours': 3,
+             'lab': True, 'pre_requisite': prereq.course_code},
+            admin_user=admin_user,
+        )
+        # A lab is gated by its theory course, so copying the prerequisite
+        # would just be a second copy to keep in step.
+        assert course.pre_requisite == prereq
+        assert course.lab.pre_requisite is None
+
+    def test_ticking_the_box_later_builds_the_lab_course(self, admin_user, db):
+        course = Course.objects.create(
+            course_code='CS-F2T', course_name='Now Lab', credit_hours=3
+        )
+        updated = _save(
+            {'course_code': 'CS-F2T', 'course_name': 'Now Lab', 'credit_hours': 3, 'lab': True},
+            instance=course, admin_user=admin_user,
+        )
         assert updated.credit_hours == 3
+        assert updated.lab.course_code == 'CS-F2T-L'
 
-    def test_toggling_lab_false_to_true_increments(self, admin_user, db):
-        course = Course.objects.create(
-            course_code='CS-F2T', course_name='Now Lab', credit_hours=3, lab=False
+    def test_clearing_the_box_deletes_the_lab_course(self, admin_user, db):
+        course = _save(
+            {'course_code': 'CS-T2F', 'course_name': 'Was Lab', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
         )
-        data = {'course_code': 'CS-F2T', 'course_name': 'Now Lab', 'credit_hours': 3, 'lab': True}
-        serializer = CourseSerializer(instance=course, data=data, context=_ctx(admin_user))
-        assert serializer.is_valid(), serializer.errors
-        updated = serializer.save()
-        assert updated.credit_hours == 4
+        updated = _save(
+            {'course_code': 'CS-T2F', 'course_name': 'Was Lab', 'credit_hours': 3, 'lab': False},
+            instance=course, admin_user=admin_user,
+        )
+        assert updated.credit_hours == 3
+        assert updated.lab is None
+        assert not Course.objects.filter(course_code='CS-T2F-L').exists()
 
-    def test_bug_lab_toggle_cannot_produce_negative_credit_hours(self, admin_user, db):
-        """
-        BUG: if credit_hours=1 and lab=True→False, update() does credit_hours -= 1 → 0,
-        but then if called again on a 0-credit lab course it goes negative.
-        This test documents the known risk.
-        """
-        course = Course.objects.create(
-            course_code='CS-NEG', course_name='Risky', credit_hours=1, lab=True
+    def test_clearing_the_box_is_refused_while_the_lab_is_allocated(
+        self, admin_user, db, faculty_instance, active_semester
+    ):
+        course = _save(
+            {'course_code': 'CS-ALC', 'course_name': 'Allocated', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
         )
-        data = {'course_code': 'CS-NEG', 'course_name': 'Risky', 'credit_hours': 1, 'lab': False}
-        serializer = CourseSerializer(instance=course, data=data, context=_ctx(admin_user))
+        CourseAllocation.objects.create(
+            faculty=faculty_instance, course=course.lab, semester=active_semester
+        )
+
+        serializer = CourseSerializer(
+            instance=course,
+            data={'course_code': 'CS-ALC', 'course_name': 'Allocated',
+                  'credit_hours': 3, 'lab': False},
+            context=_ctx(admin_user),
+        )
         assert serializer.is_valid(), serializer.errors
-        updated = serializer.save()
-        # credit_hours=1 - 1 = 0, which is technically valid per the validator (>= 0)
-        assert updated.credit_hours >= 0, "credit_hours must never go negative"
+        with pytest.raises(drf_serializers.ValidationError):
+            serializer.save()
+
+        # What holds for a course holds for its lab: the RESTRICT stands and
+        # the link survives the refusal.
+        course.refresh_from_db()
+        assert course.lab is not None
+        assert Course.objects.filter(course_code='CS-ALC-L').exists()
+
+    def test_renaming_the_course_renames_its_lab(self, admin_user, db):
+        course = _save(
+            {'course_code': 'CS-REN', 'course_name': 'Old Name', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
+        )
+        updated = _save(
+            {'course_code': 'CS-REN', 'course_name': 'New Name', 'credit_hours': 3, 'lab': True},
+            instance=course, admin_user=admin_user,
+        )
+        assert updated.lab.course_name == 'New Name-Lab'
+
+    def test_lab_is_refused_when_the_code_leaves_no_room_for_the_suffix(self, admin_user):
+        serializer = CourseSerializer(
+            data={'course_code': 'X' * 20, 'course_name': 'Too Long',
+                  'credit_hours': 3, 'lab': True},
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        with pytest.raises(drf_serializers.ValidationError):
+            serializer.save()
+
+    def test_ticking_the_box_adopts_a_lab_that_was_added_by_hand(self, admin_user, db):
+        existing = Course.objects.create(
+            course_code='CS-DUP-L', course_name='Added By Hand', credit_hours=2
+        )
+        course = _save(
+            {'course_code': 'CS-DUP', 'course_name': 'Clash', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
+        )
+        # Refusing here would strand the pair: unsaveable with the box ticked,
+        # and two unlinked rows without it.
+        assert course.lab == existing
+        assert Course.objects.filter(course_code__endswith='-L').count() == 1
+
+        existing.refresh_from_db()
+        assert existing.course_name == 'Clash-Lab'  # the name is derived
+        assert existing.credit_hours == 2          # the hours are the admin's
+
+    def test_lab_already_claimed_by_another_course_is_refused(self, admin_user, db):
+        lab = Course.objects.create(
+            course_code='CS-OWN-L', course_name='Owned -L', credit_hours=1
+        )
+        owner = Course.objects.create(
+            course_code='CS-OTH', course_name='Owner', credit_hours=3
+        )
+        owner.lab = lab
+        owner.save(update_fields=['lab'])
+
+        # CS-OWN derives the code CS-OWN-L, which CS-OTH already holds.
+        serializer = CourseSerializer(
+            data={'course_code': 'CS-OWN', 'course_name': 'Contender',
+                  'credit_hours': 3, 'lab': True},
+            context=_ctx(admin_user),
+        )
+        assert serializer.is_valid(), serializer.errors
+        with pytest.raises(drf_serializers.ValidationError):
+            serializer.save()
+
+    def test_lab_is_reported_as_a_boolean_with_the_code_beside_it(self, admin_user, db):
+        course = _save(
+            {'course_code': 'CS-REP', 'course_name': 'Reported', 'credit_hours': 3, 'lab': True},
+            admin_user=admin_user,
+        )
+        data = CourseSerializer(instance=course, context=_ctx(admin_user)).data
+        assert data['lab'] is True
+        assert data['lab_course'] == 'CS-REP-L'
+
+        plain = Course.objects.create(
+            course_code='CS-PLN', course_name='Plain', credit_hours=3
+        )
+        plain_data = CourseSerializer(instance=plain, context=_ctx(admin_user)).data
+        assert plain_data['lab'] is False
+        assert plain_data['lab_course'] is None
 
 
 # ===========================================================================

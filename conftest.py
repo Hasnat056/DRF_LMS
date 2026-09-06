@@ -177,7 +177,6 @@ def course(db):
         course_code='CS-101',
         course_name='Intro to Programming',
         credit_hours=3,
-        lab=False,
     )
 
 

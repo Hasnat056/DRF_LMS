@@ -223,14 +223,28 @@ class Command(BaseCommand):
             ('BBA-301', 'Human Resource Management', 3, False),
         ]
         courses = {}
-        for code, name, credit_hours, lab in specs:
+        for code, name, credit_hours, has_lab in specs:
             course, created = Course.objects.get_or_create(
                 course_code=code,
-                defaults={'course_name': name, 'credit_hours': credit_hours, 'lab': lab},
+                defaults={'course_name': name, 'credit_hours': credit_hours},
             )
             courses[code] = course
             if created:
                 self.stdout.write(f'  + Course {code}')
+
+            # A lab is a course of its own, worth one credit hour on top of
+            # the theory course's.
+            if not has_lab or course.lab_id:
+                continue
+            lab, lab_created = Course.objects.get_or_create(
+                course_code=f'{code}-L',
+                defaults={'course_name': f'{name}-Lab', 'credit_hours': 1},
+            )
+            course.lab = lab
+            course.save(update_fields=['lab'])
+            courses[lab.course_code] = lab
+            if lab_created:
+                self.stdout.write(f'  + Course {lab.course_code}')
 
         # a couple of prerequisite chains, for realism
         self._set_prereq(courses, 'CS-101', 'CS-100')
@@ -285,10 +299,13 @@ class Command(BaseCommand):
                 course_codes = scheme.get(program_id, [])
                 if i < len(course_codes):
                     for code in course_codes[i]:
-                        SemesterDetails.objects.create(
-                            semester=semester,
-                            course=Course.objects.get(course_code=code),
-                        )
+                        course = Course.objects.get(course_code=code)
+                        SemesterDetails.objects.create(semester=semester, course=course)
+                        # A course and its lab are offered side by side.
+                        if course.lab_id:
+                            SemesterDetails.objects.create(
+                                semester=semester, course=course.lab
+                            )
                 else:
                     SemesterDetails.objects.create(semester=semester)
 

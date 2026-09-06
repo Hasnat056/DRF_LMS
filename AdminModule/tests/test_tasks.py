@@ -126,7 +126,7 @@ class TestSemesterActivationTask:
     ):
         """All allocations, not just one, must transition to Ongoing."""
         course2 = Course.objects.create(
-            course_code='CS-202', course_name='Data Structures', credit_hours=3, lab=False
+            course_code='CS-202', course_name='Data Structures', credit_hours=3
         )
         SemesterDetails.objects.create(
             semester=inactive_semester,

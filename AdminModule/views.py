@@ -1,12 +1,13 @@
 import logging
-from django.db.models import Count, IntegerField, OuterRef, Prefetch, Subquery
+from django.db import transaction
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, RestrictedError, Subquery
 from django.db.models.functions import Coalesce, ExtractYear
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 import django_filters
 from rest_framework import generics
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
 
 
@@ -712,6 +713,10 @@ class ProgramRetrieveUpdateDestroyAPIView(
 
 class CourseFilter(django_filters.FilterSet):
     prefix = django_filters.ChoiceFilter(field_name='course_code', lookup_expr='startswith', choices=[])
+    # `lab` is a relation now, but it stays a yes/no filter: ?lab=true asks for
+    # courses that have a lab, not for one particular lab course.
+    lab = django_filters.BooleanFilter(field_name='lab', lookup_expr='isnull', exclude=True)
+
     class Meta:
         model = Course
         fields = ['prefix', 'lab', 'pre_requisite']
@@ -775,7 +780,20 @@ class CourseRetrieveUpdateDestroyAPIView(
         cache_courses_data_task.delay(self.request.user.id)
 
     def perform_destroy(self, instance):
-        instance.delete()
+        # A lab has no life apart from its theory course, so it goes too --
+        # guarded by the same RESTRICT that protects any allocated course.
+        # Either deletion failing rolls back both. Without the catch that
+        # RESTRICT surfaces as a 500 rather than a readable 400.
+        lab = instance.lab
+        try:
+            with transaction.atomic():
+                instance.delete()
+                if lab is not None:
+                    lab.delete()
+        except RestrictedError:
+            raise ValidationError(
+                {'detail': f"Course '{instance.course_code}' is allocated and cannot be deleted"}
+            )
         cache_courses_data_task.delay(self.request.user.id)
 
 
@@ -1111,7 +1129,7 @@ class BulkCourseAllocationAPIView(
                     'course_code': detail.course.course_code,
                     'course_name': detail.course.course_name,
                     'credit_hours': detail.course.credit_hours,
-                    'lab': detail.course.lab,
+                    'lab': detail.course.lab_id is not None,
                 }
                 for detail in semester.semesterdetails_set.all()
                 if detail.course is not None   # placeholder row from class creation

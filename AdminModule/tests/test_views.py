@@ -645,7 +645,7 @@ class TestCourseEndpoints:
         }, format='json')
         assert r.status_code == 201
 
-    def test_create_lab_course_auto_increments_credit_hours(self, admin_client):
+    def test_create_lab_course_builds_the_lab_alongside_it(self, admin_client):
         r = admin_client.post(f'{ADMIN}/courses/', {
             'course_code': 'CS-201',
             'course_name': 'Lab Algorithms',
@@ -653,7 +653,41 @@ class TestCourseEndpoints:
             'lab': True,
         }, format='json')
         assert r.status_code == 201
-        assert Course.objects.get(course_code='CS-201').credit_hours == 4
+        assert r.data['lab'] is True
+        assert r.data['lab_course'] == 'CS-201-L'
+
+        # The theory course keeps its own hours; the lab carries its one.
+        assert Course.objects.get(course_code='CS-201').credit_hours == 3
+        lab = Course.objects.get(course_code='CS-201-L')
+        assert lab.course_name == 'Lab Algorithms-Lab'
+        assert lab.credit_hours == 1
+
+    def test_delete_course_takes_its_lab_with_it(self, admin_client):
+        admin_client.post(f'{ADMIN}/courses/', {
+            'course_code': 'CS-210',
+            'course_name': 'Doomed',
+            'credit_hours': 3,
+            'lab': True,
+        }, format='json')
+
+        r = admin_client.delete(
+            reverse('Admin:course-detail', kwargs={'course_code': 'CS-210'})
+        )
+        assert r.status_code == 204
+        assert not Course.objects.filter(course_code__in=['CS-210', 'CS-210-L']).exists()
+
+    def test_delete_allocated_course_returns_400(
+        self, admin_client, course, faculty_instance, active_semester
+    ):
+        CourseAllocation.objects.create(
+            faculty=faculty_instance, course=course, semester=active_semester
+        )
+        r = admin_client.delete(
+            reverse('Admin:course-detail', kwargs={'course_code': course.course_code})
+        )
+        # RESTRICT holds, and it reads as a 400 rather than an unhandled 500.
+        assert r.status_code == 400
+        assert Course.objects.filter(course_code=course.course_code).exists()
 
     def test_create_negative_credit_hours_returns_400(self, admin_client):
         r = admin_client.post(f'{ADMIN}/courses/', {

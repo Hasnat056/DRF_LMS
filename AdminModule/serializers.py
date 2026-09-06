@@ -1404,7 +1404,20 @@ class CurrentSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AcademicSession
-        fields = ['id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline']
+        # The three deadlines in the order the session passes them: Initiated
+        # -> Available, Available -> Active, Active -> Completed. A client
+        # sitting in the enrollment window needs the activation date to say
+        # when that window shuts, so all three are here rather than the ends
+        # alone.
+        fields = [
+            'id',
+            'period',
+            'year',
+            'status',
+            'availability_deadline',
+            'activation_deadline',
+            'closing_deadline',
+        ]
         read_only_fields = fields
 
 

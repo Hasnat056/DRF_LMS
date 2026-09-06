@@ -245,7 +245,9 @@ class AdminDashboardAPIView(
             'enrollment_yearly': enrollment_yearly,
             'yearly_admission': yearly_admission,
         }
-        cache.set(cache_key,data, timeout=60*5)
+        # Nothing invalidates this key on a write, so the TTL is the only
+        # thing bounding how stale the counts get.
+        cache.set(cache_key,data, timeout=60)
 
         return Response(data)
 

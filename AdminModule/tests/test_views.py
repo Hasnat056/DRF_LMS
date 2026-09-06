@@ -846,7 +846,33 @@ class TestCurrentSessionView:
     def test_fields_present(self, anon_client, academic_session):
         r = anon_client.get('/api/sessions/current/')
         assert r.status_code == 200
-        assert set(r.data.keys()) == {'id', 'period', 'year', 'status', 'availability_deadline', 'closing_deadline'}
+        assert set(r.data.keys()) == {
+            'id', 'period', 'year', 'status',
+            'availability_deadline', 'activation_deadline', 'closing_deadline',
+        }
+
+    def test_carries_every_deadline_in_the_lifecycle(self, anon_client, db):
+        """A client in the enrollment window needs the activation date to know
+        when that window shuts, so all three transitions are reported."""
+        from django.utils.dateparse import parse_datetime
+        from Models.models import AcademicSession
+
+        # The deadline triggers want activation 2-4 weeks out and closing
+        # 1-4 weeks out, with closing after activation.
+        activation = timezone.now() + timedelta(days=21)
+        closing = timezone.now() + timedelta(days=27)
+        session = AcademicSession.objects.create(
+            period='Fall', year=2027, status='Available',
+            activation_deadline=activation, availability_delta=7,
+            closing_deadline=closing,
+        )
+
+        r = anon_client.get('/api/sessions/current/')
+        assert r.status_code == 200
+        assert parse_datetime(r.data['activation_deadline']) == activation
+        assert parse_datetime(r.data['closing_deadline']) == closing
+        # Derived, not stored: activation minus availability_delta days.
+        assert parse_datetime(r.data['availability_deadline']) == session.availability_deadline
 
 
 @pytest.mark.django_db

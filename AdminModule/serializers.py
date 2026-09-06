@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, RestrictedError
 from django.http import Http404
 from django.shortcuts import get_list_or_404, get_object_or_404
 from drf_spectacular.types import OpenApiTypes
@@ -23,6 +23,17 @@ from StudentModule.serializers import ReviewsSerializer
 from .mixins import PersonSerializerMixin, ResultCalculationMixin, TranscriptGenerationMixin
 
 logger = logging.getLogger(__name__)
+
+# A lab is a course in its own right, coded and named after the theory course
+# it belongs to. Admins never type either one -- ticking the lab box on a
+# course derives both.
+LAB_COURSE_SUFFIX = '-L'
+COURSE_CODE_MAX_LENGTH = Course._meta.get_field('course_code').max_length
+COURSE_NAME_MAX_LENGTH = Course._meta.get_field('course_name').max_length
+
+
+def _lab_course_name(course_name):
+    return f'{course_name} {LAB_COURSE_SUFFIX}'[:COURSE_NAME_MAX_LENGTH]
 
 
 
@@ -450,9 +461,24 @@ class CourseSerializer(serializers.ModelSerializer):
         view_name = 'Admin:course-detail',
         lookup_field = 'course_code'
     )
+    # The admin UI is a checkbox, so `lab` stays a boolean on the wire even
+    # though it is a relation underneath: ticking it builds the lab course,
+    # clearing it takes the lab course away. course_code is the primary key,
+    # so lab_id is already the lab's code -- reading through it keeps both
+    # fields join-free.
+    lab = serializers.BooleanField(source='lab_id', required=False)
+    lab_course = serializers.CharField(source='lab_id', read_only=True)
+
     class Meta:
         model = Course
         fields = '__all__'
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # DRF turns a null source into None before the field ever sees it, so
+        # a course without a lab would report `lab: null` rather than false.
+        data['lab'] = instance.lab_id is not None
+        return data
 
     def validate_credit_hours(self, value):
         if value < 0:
@@ -461,26 +487,73 @@ class CourseSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Credit hours cannot be greater than 5")
         return value
 
+    def _build_lab(self, course):
+        """Create the {code}-L course and hang it off its theory course."""
+        lab_code = f'{course.course_code}{LAB_COURSE_SUFFIX}'
+        if len(lab_code) > COURSE_CODE_MAX_LENGTH:
+            raise serializers.ValidationError({
+                'lab': f"Course code '{course.course_code}' leaves no room for a "
+                       f"'{LAB_COURSE_SUFFIX}' suffix within "
+                       f"{COURSE_CODE_MAX_LENGTH} characters"
+            })
+        if Course.objects.filter(course_code=lab_code).exists():
+            raise serializers.ValidationError({
+                'lab': f"Course '{lab_code}' already exists"
+            })
 
+        lab = Course.objects.create(
+            course_code=lab_code,
+            course_name=_lab_course_name(course.course_name),
+            credit_hours=1,
+        )
+        course.lab = lab
+        course.save(update_fields=['lab'])
 
+    def _drop_lab(self, course):
+        """Clearing the checkbox deletes the lab course, if it is free to go.
+
+        Nothing special guards it -- what holds for a course holds for its
+        lab, so an allocated lab is protected by the same RESTRICT that
+        protects any allocated course. That surfaces as a 400 rather than the
+        500 an uncaught RestrictedError would produce.
+        """
+        lab = course.lab
+        course.lab = None
+        course.save(update_fields=['lab'])
+        try:
+            lab.delete()
+        except RestrictedError:
+            raise serializers.ValidationError({
+                'lab': f"Course '{lab.course_code}' is allocated and cannot be removed"
+            })
+
+    @transaction.atomic
     def create(self, validated_data):
-        if validated_data['lab']:
-            validated_data['credit_hours'] += 1
-
+        has_lab = validated_data.pop('lab_id', False)
         course = Course.objects.create(**validated_data)
+        if has_lab:
+            self._build_lab(course)
         return course
 
+    @transaction.atomic
     def update(self, instance, validated_data):
-        if 'lab' in validated_data:
-            new_lab = validated_data['lab']
-            if instance.lab and not new_lab:
-                validated_data['credit_hours'] = validated_data.get('credit_hours', instance.credit_hours) - 1
-            elif not instance.lab and new_lab:
-                validated_data['credit_hours'] = validated_data.get('credit_hours', instance.credit_hours) + 1
+        has_lab = validated_data.pop('lab_id', None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
+        if has_lab is True and instance.lab_id is None:
+            self._build_lab(instance)
+        elif has_lab is False and instance.lab_id is not None:
+            self._drop_lab(instance)
+
+        # The lab's name is derived from the theory course's, so a rename has
+        # to carry across. course_code is the primary key and cannot change.
+        if instance.lab_id is not None and 'course_name' in validated_data:
+            lab = instance.lab
+            lab.course_name = _lab_course_name(instance.course_name)
+            lab.save(update_fields=['course_name'])
 
         return instance
 
@@ -627,10 +700,18 @@ class ClassSerializer(serializers.ModelSerializer):
 
 
                 if course_codes:
-                    course_queryset = get_list_or_404(Course, course_code__in=course_codes)
-                    loaded_course_codes = {each.course_code: each for each in course_queryset}
-                    for each in semester_detail_set:
-                        course = loaded_course_codes[each['course']]
+                    course_queryset = get_list_or_404(
+                        Course.objects.select_related('lab'), course_code__in=course_codes
+                    )
+                    # A course and its lab are offered side by side, so putting
+                    # the theory course in the scheme puts its lab there too.
+                    # Only the structure follows: allocation and enrolment stay
+                    # separate, which is what lets a student repeat a lab alone.
+                    scheduled = {each.course_code: each for each in course_queryset}
+                    for course in list(scheduled.values()):
+                        if course.lab_id and course.lab_id not in scheduled:
+                            scheduled[course.lab_id] = course.lab
+                    for course in scheduled.values():
                         SemesterDetails.objects.create(course=course, semester=semester)
 
                 if 'session' in each_semester and each_semester['session'] is not None:

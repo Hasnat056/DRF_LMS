@@ -803,7 +803,7 @@ def cache_semester_enrollment_data_task(semester_id):
                       'course_data':{'course_code' : each_allocation.course.course_code,
                                                'course_name' : each_allocation.course.course_name,
                                                'credit_hours' : each_allocation.course.credit_hours,
-                                                'lab': each_allocation.course.lab,}
+                                                'lab': each_allocation.course.lab_id is not None,}
                     })
 
     cache.set(cache_key, data,timeout=None)

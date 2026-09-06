@@ -121,12 +121,26 @@ def _seed(out):
             course_code=f'CRS-{i:04d}',
             course_name=f'Course Number {i}',
             credit_hours=rng.choice([1, 2, 3, 3, 3, 4]),
-            lab=(i % 7 == 0),
             description=f'Auto-generated stress course {i}.',
         )
         for i in range(COURSES)
     ])
-    _log(out, f'courses={len(courses)}')
+    # Every seventh course carries a lab, and a lab is a course in its own
+    # right -- one credit hour, allocated and graded separately.
+    with_labs = [course for i, course in enumerate(courses) if i % 7 == 0]
+    labs = Course.objects.bulk_create([
+        Course(
+            course_code=f'{course.course_code}-L',
+            course_name=f'{course.course_name} -L',
+            credit_hours=1,
+            description=f'Auto-generated stress lab for {course.course_code}.',
+        )
+        for course in with_labs
+    ])
+    for course, lab in zip(with_labs, labs):
+        course.lab = lab
+    Course.objects.bulk_update(with_labs, ['lab'])
+    _log(out, f'courses={len(courses)} labs={len(labs)}')
 
     # -- people ------------------------------------------------------------
     # person_id is a 20-char PK and cnic/contact_number/email are all unique.

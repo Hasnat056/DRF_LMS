@@ -254,7 +254,7 @@ class TestAllocationAPICreate:
     ):
         """Course not in semester scheme must be rejected."""
         unrelated = Course.objects.create(
-            course_code='XX-999', course_name='Unrelated', credit_hours=2, lab=False
+            course_code='XX-999', course_name='Unrelated', credit_hours=2
         )
         response = admin_client.post(f'{ADMIN}/allocations/', {
             'faculty': faculty_instance.employee_id.person_id,

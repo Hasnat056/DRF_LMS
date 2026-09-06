@@ -22,7 +22,7 @@ BULK = '/api/admin/allocations/bulk/'
 @pytest.fixture
 def second_course(db):
     return Course.objects.create(
-        course_code='CS-102', course_name='Discrete Maths', credit_hours=3, lab=False,
+        course_code='CS-102', course_name='Discrete Maths', credit_hours=3,
     )
 
 
@@ -152,7 +152,7 @@ class TestBulkAllocationCreate:
         self, admin_client, worksheet, faculty_instance
     ):
         stray = Course.objects.create(
-            course_code='ZZ-999', course_name='Unrelated', credit_hours=3, lab=False,
+            course_code='ZZ-999', course_name='Unrelated', credit_hours=3,
         )
         r = admin_client.post(
             BULK, self._payload(worksheet, stray, faculty_instance), format='json'
@@ -174,7 +174,7 @@ class TestBulkAllocationCreate:
     ):
         """All-or-nothing — a bad row must not leave the good ones behind."""
         stray = Course.objects.create(
-            course_code='ZZ-998', course_name='Unrelated', credit_hours=3, lab=False,
+            course_code='ZZ-998', course_name='Unrelated', credit_hours=3,
         )
         r = admin_client.post(BULK, [
             {'semester': worksheet.semester_id, 'course': course.course_code,

@@ -156,8 +156,19 @@ class Course(models.Model):
     course_code = models.CharField(primary_key=True, max_length=20)
     course_name = models.CharField(max_length=100, db_index=True)
     credit_hours = models.PositiveIntegerField(default=0)
-    lab = models.BooleanField(default=False)
-    pre_requisite = models.ForeignKey('self', on_delete=models.SET_NULL, db_column='preRequisite', blank=True, null=True)
+    # The lab half of a course, held as its own Course row ({code}-L, one
+    # credit hour). Only the structure is derived: the lab is allocated,
+    # enrolled in and graded on its own -- a student improving a lab
+    # registers for it alone -- so nothing about its lifecycle follows the
+    # theory course.
+    lab = models.OneToOneField(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='lab_for',
+        blank=True,
+        null=True,
+    )
+    pre_requisite = models.ForeignKey('self', on_delete=models.SET_NULL, db_column='preRequisite', related_name='dependent_courses', blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     class Meta:

@@ -115,14 +115,10 @@ services:
 
   # Code-execution services. Compilers/serializers.py dials these by hostname
   # (`http://python-compiler:8000/run`), so a submission made locally fails
-  # without them. Behind a profile because they are three more containers and
-  # most local work never touches them:
-  #
-  #     docker compose -f dev/docker-compose.yaml --profile compilers up -d
+  # without them -- they come up with the rest of the stack.
   #
   # Single replicas here; production runs two of each.
   python-compiler:
-    profiles: ["compilers"]
     build: ../Compilers/python_compiler
     container_name: nexusapi-python-compiler-dev
     restart: unless-stopped
@@ -132,7 +128,6 @@ services:
       - nexus_network
 
   c-compiler:
-    profiles: ["compilers"]
     build: ../Compilers/c_compiler
     container_name: nexusapi-c-compiler-dev
     restart: unless-stopped
@@ -142,7 +137,6 @@ services:
       - nexus_network
 
   java-compiler:
-    profiles: ["compilers"]
     build: ../Compilers/java_compiler
     container_name: nexusapi-java-compiler-dev
     restart: unless-stopped
